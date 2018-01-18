@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -35,7 +35,7 @@ public final class ObservableCreate<T> extends Observable<T> {
     protected void subscribeActual(Observer<? super T> observer) {
         CreateEmitter<T> parent = new CreateEmitter<T>(observer);
         observer.onSubscribe(parent);
-        
+
         try {
             source.subscribe(parent);
         } catch (Throwable ex) {
@@ -43,24 +43,25 @@ public final class ObservableCreate<T> extends Observable<T> {
             parent.onError(ex);
         }
     }
-    
-    static final class CreateEmitter<T> 
+
+    static final class CreateEmitter<T>
     extends AtomicReference<Disposable>
     implements ObservableEmitter<T>, Disposable {
 
-        /** */
+
         private static final long serialVersionUID = -3434801548987643227L;
-        
+
         final Observer<? super T> observer;
-        
-        public CreateEmitter(Observer<? super T> observer) {
+
+        CreateEmitter(Observer<? super T> observer) {
             this.observer = observer;
         }
-        
+
         @Override
         public void onNext(T t) {
             if (t == null) {
-                onError(new NullPointerException());
+                onError(new NullPointerException("onNext called with null. Null values are generally not allowed in 2.x operators and sources."));
+                return;
             }
             if (!isDisposed()) {
                 observer.onNext(t);
@@ -69,8 +70,15 @@ public final class ObservableCreate<T> extends Observable<T> {
 
         @Override
         public void onError(Throwable t) {
+            if (!tryOnError(t)) {
+                RxJavaPlugins.onError(t);
+            }
+        }
+
+        @Override
+        public boolean tryOnError(Throwable t) {
             if (t == null) {
-                t = new NullPointerException();
+                t = new NullPointerException("onError called with null. Null values are generally not allowed in 2.x operators and sources.");
             }
             if (!isDisposed()) {
                 try {
@@ -78,9 +86,9 @@ public final class ObservableCreate<T> extends Observable<T> {
                 } finally {
                     dispose();
                 }
-            } else {
-                RxJavaPlugins.onError(t);
+                return true;
             }
+            return false;
         }
 
         @Override
@@ -105,11 +113,6 @@ public final class ObservableCreate<T> extends Observable<T> {
         }
 
         @Override
-        public boolean isCancelled() {
-            return isDisposed();
-        }
-
-        @Override
         public ObservableEmitter<T> serialize() {
             return new SerializedEmitter<T>(this);
         }
@@ -118,33 +121,33 @@ public final class ObservableCreate<T> extends Observable<T> {
         public void dispose() {
             DisposableHelper.dispose(this);
         }
-        
+
         @Override
         public boolean isDisposed() {
             return DisposableHelper.isDisposed(get());
         }
     }
-    
+
     /**
      * Serializes calls to onNext, onError and onComplete.
      *
      * @param <T> the value type
      */
-    static final class SerializedEmitter<T> 
+    static final class SerializedEmitter<T>
     extends AtomicInteger
     implements ObservableEmitter<T> {
-        /** */
+
         private static final long serialVersionUID = 4883307006032401862L;
 
         final ObservableEmitter<T> emitter;
-        
+
         final AtomicThrowable error;
-        
-        final SimpleQueue<T> queue;
-        
+
+        final SpscLinkedArrayQueue<T> queue;
+
         volatile boolean done;
-        
-        public SerializedEmitter(ObservableEmitter<T> emitter) {
+
+        SerializedEmitter(ObservableEmitter<T> emitter) {
             this.emitter = emitter;
             this.error = new AtomicThrowable();
             this.queue = new SpscLinkedArrayQueue<T>(16);
@@ -152,11 +155,11 @@ public final class ObservableCreate<T> extends Observable<T> {
 
         @Override
         public void onNext(T t) {
-            if (emitter.isCancelled() || done) {
+            if (emitter.isDisposed() || done) {
                 return;
             }
             if (t == null) {
-                onError(new NullPointerException("t is null"));
+                onError(new NullPointerException("onNext called with null. Null values are generally not allowed in 2.x operators and sources."));
                 return;
             }
             if (get() == 0 && compareAndSet(0, 1)) {
@@ -178,45 +181,51 @@ public final class ObservableCreate<T> extends Observable<T> {
 
         @Override
         public void onError(Throwable t) {
-            if (emitter.isCancelled() || done) {
-                RxJavaPlugins.onError(t);
-                return;
-            }
-            if (t == null) {
-                t = new NullPointerException("t is null");
-            }
-            if (error.addThrowable(t)) {
-                done = true;
-                drain();
-            } else {
+            if (!tryOnError(t)) {
                 RxJavaPlugins.onError(t);
             }
         }
 
         @Override
+        public boolean tryOnError(Throwable t) {
+            if (emitter.isDisposed() || done) {
+                return false;
+            }
+            if (t == null) {
+                t = new NullPointerException("onError called with null. Null values are generally not allowed in 2.x operators and sources.");
+            }
+            if (error.addThrowable(t)) {
+                done = true;
+                drain();
+                return true;
+            }
+            return false;
+        }
+
+        @Override
         public void onComplete() {
-            if (emitter.isCancelled() || done) {
+            if (emitter.isDisposed() || done) {
                 return;
             }
             done = true;
             drain();
         }
-        
+
         void drain() {
             if (getAndIncrement() == 0) {
                 drainLoop();
             }
         }
-        
+
         void drainLoop() {
             ObservableEmitter<T> e = emitter;
-            SimpleQueue<T> q = queue;
+            SpscLinkedArrayQueue<T> q = queue;
             AtomicThrowable error = this.error;
             int missed = 1;
             for (;;) {
-                
+
                 for (;;) {
-                    if (e.isCancelled()) {
+                    if (e.isDisposed()) {
                         q.clear();
                         return;
                     }
@@ -226,32 +235,24 @@ public final class ObservableCreate<T> extends Observable<T> {
                         e.onError(error.terminate());
                         return;
                     }
-                    
+
                     boolean d = done;
-                    T v;
-                    
-                    try {
-                        v = q.poll();
-                    } catch (Throwable ex) {
-                        Exceptions.throwIfFatal(ex);
-                        // should never happen
-                        v = null;
-                    }
-                    
+                    T v = q.poll();
+
                     boolean empty = v == null;
-                    
+
                     if (d && empty) {
                         e.onComplete();
                         return;
                     }
-                    
+
                     if (empty) {
                         break;
                     }
-                    
+
                     e.onNext(v);
                 }
-                
+
                 missed = addAndGet(-missed);
                 if (missed == 0) {
                     break;
@@ -270,8 +271,8 @@ public final class ObservableCreate<T> extends Observable<T> {
         }
 
         @Override
-        public boolean isCancelled() {
-            return emitter.isCancelled();
+        public boolean isDisposed() {
+            return emitter.isDisposed();
         }
 
         @Override

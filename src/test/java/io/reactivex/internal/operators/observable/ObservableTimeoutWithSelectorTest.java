@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,11 +13,11 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.junit.Assert.assertFalse;
-import static org.mockito.Matchers.*;
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import java.util.Arrays;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -27,10 +27,14 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import io.reactivex.*;
+import io.reactivex.Observable;
+import io.reactivex.Observer;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.Function;
+import io.reactivex.internal.functions.Functions;
 import io.reactivex.observers.TestObserver;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subjects.PublishSubject;
 
@@ -47,19 +51,12 @@ public class ObservableTimeoutWithSelectorTest {
             }
         };
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return timeout;
-            }
-        };
-
         Observable<Integer> other = Observable.fromIterable(Arrays.asList(100));
 
         Observer<Object> o = TestHelper.mockObserver();
         InOrder inOrder = inOrder(o);
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
+        source.timeout(timeout, timeoutFunc, other).subscribe(o);
 
         source.onNext(1);
         source.onNext(2);
@@ -87,22 +84,15 @@ public class ObservableTimeoutWithSelectorTest {
             }
         };
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return timeout;
-            }
-        };
-
         Observable<Integer> other = Observable.fromIterable(Arrays.asList(100));
 
         Observer<Object> o = TestHelper.mockObserver();
         InOrder inOrder = inOrder(o);
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
-        
+        source.timeout(timeout, timeoutFunc, other).subscribe(o);
+
         timeout.onNext(1);
-        
+
         inOrder.verify(o).onNext(100);
         inOrder.verify(o).onComplete();
         verify(o, never()).onError(any(Throwable.class));
@@ -132,7 +122,7 @@ public class ObservableTimeoutWithSelectorTest {
 
         Observer<Object> o = TestHelper.mockObserver();
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
+        source.timeout(Observable.defer(firstTimeoutFunc), timeoutFunc, other).subscribe(o);
 
         verify(o).onError(any(TestException.class));
         verify(o, never()).onNext(any());
@@ -152,19 +142,12 @@ public class ObservableTimeoutWithSelectorTest {
             }
         };
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return timeout;
-            }
-        };
-
         Observable<Integer> other = Observable.fromIterable(Arrays.asList(100));
 
         Observer<Object> o = TestHelper.mockObserver();
         InOrder inOrder = inOrder(o);
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
+        source.timeout(timeout, timeoutFunc, other).subscribe(o);
 
         source.onNext(1);
 
@@ -186,18 +169,11 @@ public class ObservableTimeoutWithSelectorTest {
             }
         };
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return Observable.<Integer> error(new TestException());
-            }
-        };
-
         Observable<Integer> other = Observable.fromIterable(Arrays.asList(100));
 
         Observer<Object> o = TestHelper.mockObserver();
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
+        source.timeout(Observable.<Integer> error(new TestException()), timeoutFunc, other).subscribe(o);
 
         verify(o).onError(any(TestException.class));
         verify(o, never()).onNext(any());
@@ -217,19 +193,12 @@ public class ObservableTimeoutWithSelectorTest {
             }
         };
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return timeout;
-            }
-        };
-
         Observable<Integer> other = Observable.fromIterable(Arrays.asList(100));
 
         Observer<Object> o = TestHelper.mockObserver();
         InOrder inOrder = inOrder(o);
 
-        source.timeout(firstTimeoutFunc, timeoutFunc, other).subscribe(o);
+        source.timeout(timeout, timeoutFunc, other).subscribe(o);
 
         source.onNext(1);
 
@@ -244,13 +213,6 @@ public class ObservableTimeoutWithSelectorTest {
         PublishSubject<Integer> source = PublishSubject.create();
         final PublishSubject<Integer> timeout = PublishSubject.create();
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return timeout;
-            }
-        };
-
         Function<Integer, Observable<Integer>> timeoutFunc = new Function<Integer, Observable<Integer>>() {
             @Override
             public Observable<Integer> apply(Integer t1) {
@@ -259,7 +221,7 @@ public class ObservableTimeoutWithSelectorTest {
         };
 
         Observer<Object> o = TestHelper.mockObserver();
-        source.timeout(firstTimeoutFunc, timeoutFunc).subscribe(o);
+        source.timeout(timeout, timeoutFunc).subscribe(o);
 
         timeout.onNext(1);
 
@@ -273,13 +235,6 @@ public class ObservableTimeoutWithSelectorTest {
         PublishSubject<Integer> source = PublishSubject.create();
         final PublishSubject<Integer> timeout = PublishSubject.create();
 
-        Callable<Observable<Integer>> firstTimeoutFunc = new Callable<Observable<Integer>>() {
-            @Override
-            public Observable<Integer> call() {
-                return PublishSubject.create();
-            }
-        };
-
         Function<Integer, Observable<Integer>> timeoutFunc = new Function<Integer, Observable<Integer>>() {
             @Override
             public Observable<Integer> apply(Integer t1) {
@@ -288,7 +243,7 @@ public class ObservableTimeoutWithSelectorTest {
         };
 
         Observer<Object> o = TestHelper.mockObserver();
-        source.timeout(firstTimeoutFunc, timeoutFunc).subscribe(o);
+        source.timeout(PublishSubject.create(), timeoutFunc).subscribe(o);
         source.onNext(1);
 
         timeout.onNext(1);
@@ -303,16 +258,16 @@ public class ObservableTimeoutWithSelectorTest {
     public void testTimeoutSelectorWithTimeoutAndOnNextRaceCondition() throws InterruptedException {
         // Thread 1                                    Thread 2
         //
-        // NbpObserver.onNext(1)
+        // observer.onNext(1)
         // start timeout
         // unsubscribe timeout in thread 2          start to do some long-time work in "unsubscribe"
-        // NbpObserver.onNext(2)
+        // observer.onNext(2)
         // timeout.onNext(1)
         //                                          "unsubscribe" done
         //
         //
         // In the above case, the timeout operator should ignore "timeout.onNext(1)"
-        // since "NbpObserver" has already seen 2.
+        // since "observer" has already seen 2.
         final CountDownLatch observerReceivedTwo = new CountDownLatch(1);
         final CountDownLatch timeoutEmittedOne = new CountDownLatch(1);
         final CountDownLatch observerCompleted = new CountDownLatch(1);
@@ -326,10 +281,10 @@ public class ObservableTimeoutWithSelectorTest {
                     // Force "unsubscribe" run on another thread
                     return Observable.unsafeCreate(new ObservableSource<Integer>() {
                         @Override
-                        public void subscribe(Observer<? super Integer> NbpSubscriber) {
-                            NbpSubscriber.onSubscribe(Disposables.empty());
+                        public void subscribe(Observer<? super Integer> observer) {
+                            observer.onSubscribe(Disposables.empty());
                             enteredTimeoutOne.countDown();
-                            // force the timeout message be sent after NbpObserver.onNext(2)
+                            // force the timeout message be sent after observer.onNext(2)
                             while (true) {
                                 try {
                                     if (!observerReceivedTwo.await(30, TimeUnit.SECONDS)) {
@@ -343,7 +298,7 @@ public class ObservableTimeoutWithSelectorTest {
                                     // we ignore the interrupt signal from Scheduler.
                                 }
                             }
-                            NbpSubscriber.onNext(1);
+                            observer.onNext(1);
                             timeoutEmittedOne.countDown();
                         }
                     }).subscribeOn(Schedulers.newThread());
@@ -383,7 +338,7 @@ public class ObservableTimeoutWithSelectorTest {
                 source.timeout(timeoutFunc, Observable.just(3)).subscribe(ts);
                 source.onNext(1); // start timeout
                 try {
-                    if(!enteredTimeoutOne.await(30, TimeUnit.SECONDS)) {
+                    if (!enteredTimeoutOne.await(30, TimeUnit.SECONDS)) {
                         latchTimeout.set(true);
                     }
                 } catch (InterruptedException e) {
@@ -391,7 +346,7 @@ public class ObservableTimeoutWithSelectorTest {
                 }
                 source.onNext(2); // disable timeout
                 try {
-                    if(!timeoutEmittedOne.await(30, TimeUnit.SECONDS)) {
+                    if (!timeoutEmittedOne.await(30, TimeUnit.SECONDS)) {
                         latchTimeout.set(true);
                     }
                 } catch (InterruptedException e) {
@@ -402,7 +357,7 @@ public class ObservableTimeoutWithSelectorTest {
 
         }).start();
 
-        if(!observerCompleted.await(30, TimeUnit.SECONDS)) {
+        if (!observerCompleted.await(30, TimeUnit.SECONDS)) {
             latchTimeout.set(true);
         }
 
@@ -415,5 +370,180 @@ public class ObservableTimeoutWithSelectorTest {
         inOrder.verify(o, never()).onNext(3);
         inOrder.verify(o).onComplete();
         inOrder.verifyNoMoreInteractions();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishSubject.create().timeout(Functions.justFunction(Observable.never())));
+
+        TestHelper.checkDisposed(PublishSubject.create().timeout(Functions.justFunction(Observable.never()), Observable.never()));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.timeout(Functions.justFunction(Observable.never()));
+            }
+        });
+
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.timeout(Functions.justFunction(Observable.never()), Observable.never());
+            }
+        });
+    }
+
+    @Test
+    public void empty() {
+        Observable.empty()
+        .timeout(Functions.justFunction(Observable.never()))
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void error() {
+        Observable.error(new TestException())
+        .timeout(Functions.justFunction(Observable.never()))
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void emptyInner() {
+        PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = ps
+        .timeout(Functions.justFunction(Observable.empty()))
+        .test();
+
+        ps.onNext(1);
+
+        to.assertFailure(TimeoutException.class, 1);
+    }
+
+    @Test
+    public void badInnerSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            PublishSubject<Integer> ps = PublishSubject.create();
+
+            TestObserver<Integer> to = ps
+            .timeout(Functions.justFunction(new Observable<Integer>() {
+                @Override
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onError(new TestException("First"));
+                    observer.onNext(2);
+                    observer.onError(new TestException("Second"));
+                    observer.onComplete();
+                }
+            }))
+            .test();
+
+            ps.onNext(1);
+
+            to.assertFailureAndMessage(TestException.class, "First", 1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "Second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void badInnerSourceOther() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            PublishSubject<Integer> ps = PublishSubject.create();
+
+            TestObserver<Integer> to = ps
+            .timeout(Functions.justFunction(new Observable<Integer>() {
+                @Override
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onError(new TestException("First"));
+                    observer.onNext(2);
+                    observer.onError(new TestException("Second"));
+                    observer.onComplete();
+                }
+            }), Observable.just(2))
+            .test();
+
+            ps.onNext(1);
+
+            to.assertFailureAndMessage(TestException.class, "First", 1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "Second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void withOtherMainError() {
+        Observable.error(new TestException())
+        .timeout(Functions.justFunction(Observable.never()), Observable.never())
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void badSourceTimeout() {
+        new Observable<Integer>() {
+            @Override
+            protected void subscribeActual(Observer<? super Integer> observer) {
+                observer.onSubscribe(Disposables.empty());
+                observer.onNext(1);
+                observer.onNext(2);
+                observer.onError(new TestException("First"));
+                observer.onNext(3);
+                observer.onComplete();
+                observer.onError(new TestException("Second"));
+            }
+        }
+        .timeout(Functions.justFunction(Observable.never()), Observable.<Integer>never())
+        .take(1)
+        .test()
+        .assertResult(1);
+    }
+
+    @Test
+    public void selectorTake() {
+        PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = ps
+        .timeout(Functions.justFunction(Observable.never()))
+        .take(1)
+        .test();
+
+        assertTrue(ps.hasObservers());
+
+        ps.onNext(1);
+
+        assertFalse(ps.hasObservers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void selectorFallbackTake() {
+        PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = ps
+        .timeout(Functions.justFunction(Observable.never()), Observable.just(2))
+        .take(1)
+        .test();
+
+        assertTrue(ps.hasObservers());
+
+        ps.onNext(1);
+
+        assertFalse(ps.hasObservers());
+
+        to.assertResult(1);
     }
 }

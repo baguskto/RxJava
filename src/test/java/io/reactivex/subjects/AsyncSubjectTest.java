@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,7 @@
 package io.reactivex.subjects;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.concurrent.TimeUnit;
@@ -24,13 +24,21 @@ import org.junit.*;
 import org.mockito.*;
 
 import io.reactivex.*;
+import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.Consumer;
-import io.reactivex.observers.TestObserver;
+import io.reactivex.internal.fuseable.QueueSubscription;
+import io.reactivex.observers.*;
+import io.reactivex.schedulers.Schedulers;
 
-public class AsyncSubjectTest {
+public class AsyncSubjectTest extends SubjectTest<Integer> {
 
     private final Throwable testException = new Throwable();
+
+    @Override
+    protected Subject<Integer> create() {
+        return AsyncSubject.create();
+    }
 
     @Test
     public void testNeverCompleted() {
@@ -181,14 +189,14 @@ public class AsyncSubjectTest {
     }
 
     /**
-     * Can receive timeout if subscribe never receives an onError/onCompleted ... which reveals a race condition.
+     * Can receive timeout if subscribe never receives an onError/onComplete ... which reveals a race condition.
      */
     @Test(timeout = 10000)
     public void testSubscribeCompletionRaceCondition() {
         /*
          * With non-threadsafe code this fails most of the time on my dev laptop and is non-deterministic enough
          * to act as a unit test to the race conditions.
-         * 
+         *
          * With the synchronization code in place I can not get this to fail on my laptop.
          */
         for (int i = 0; i < 50; i++) {
@@ -253,14 +261,14 @@ public class AsyncSubjectTest {
         private final AsyncSubject<String> subject;
         private final AtomicReference<String> value = new AtomicReference<String>();
 
-        public SubjectSubscriberThread(AsyncSubject<String> subject) {
+        SubjectSubscriberThread(AsyncSubject<String> subject) {
             this.subject = subject;
         }
 
         @Override
         public void run() {
             try {
-                // a timeout exception will happen if we don't get a terminal state 
+                // a timeout exception will happen if we don't get a terminal state
                 String v = subject.timeout(2000, TimeUnit.MILLISECONDS).blockingSingle();
                 value.set(v);
             } catch (Exception e) {
@@ -268,14 +276,14 @@ public class AsyncSubjectTest {
             }
         }
     }
-    
+
     // FIXME subscriber methods are not allowed to throw
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery() {
-//        NbpAsyncSubject<String> ps = NbpAsyncSubject.create();
+//        AsyncSubject<String> ps = AsyncSubject.create();
 //
 //        ps.subscribe();
-//        TestSubscriber<String> ts = new TestSubscriber<String>();
+//        TestObserver<String> ts = new TestObserver<String>();
 //        ps.subscribe(ts);
 //
 //        try {
@@ -284,22 +292,22 @@ public class AsyncSubjectTest {
 //        } catch (OnErrorNotImplementedException e) {
 //            // ignore
 //        }
-//        // even though the onError above throws we should still receive it on the other subscriber 
+//        // even though the onError above throws we should still receive it on the other subscriber
 //        assertEquals(1, ts.getOnErrorEvents().size());
 //    }
-    
-    
+
+
     // FIXME subscriber methods are not allowed to throw
 //    /**
 //     * This one has multiple failures so should get a CompositeException
 //     */
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery2() {
-//        NbpAsyncSubject<String> ps = NbpAsyncSubject.create();
+//        AsyncSubject<String> ps = AsyncSubject.create();
 //
 //        ps.subscribe();
 //        ps.subscribe();
-//        TestSubscriber<String> ts = new TestSubscriber<String>();
+//        TestObserver<String> ts = new TestObserver<String>();
 //        ps.subscribe(ts);
 //        ps.subscribe();
 //        ps.subscribe();
@@ -312,28 +320,28 @@ public class AsyncSubjectTest {
 //            // we should have 5 of them
 //            assertEquals(5, e.getExceptions().size());
 //        }
-//        // even though the onError above throws we should still receive it on the other subscriber 
+//        // even though the onError above throws we should still receive it on the other subscriber
 //        assertEquals(1, ts.getOnErrorEvents().size());
 //    }
 
     @Test
     public void testCurrentStateMethodsNormal() {
         AsyncSubject<Object> as = AsyncSubject.create();
-        
+
         assertFalse(as.hasValue());
         assertFalse(as.hasThrowable());
         assertFalse(as.hasComplete());
         assertNull(as.getValue());
         assertNull(as.getThrowable());
-        
+
         as.onNext(1);
-        
-        assertTrue(as.hasValue());
+
+        assertFalse(as.hasValue()); // AS no longer reports a value until it has completed
         assertFalse(as.hasThrowable());
         assertFalse(as.hasComplete());
-        assertEquals(1, as.getValue());
+        assertNull(as.getValue()); // AS no longer reports a value until it has completed
         assertNull(as.getThrowable());
-        
+
         as.onComplete();
         assertTrue(as.hasValue());
         assertFalse(as.hasThrowable());
@@ -341,19 +349,19 @@ public class AsyncSubjectTest {
         assertEquals(1, as.getValue());
         assertNull(as.getThrowable());
     }
-    
+
     @Test
     public void testCurrentStateMethodsEmpty() {
         AsyncSubject<Object> as = AsyncSubject.create();
-        
+
         assertFalse(as.hasValue());
         assertFalse(as.hasThrowable());
         assertFalse(as.hasComplete());
         assertNull(as.getValue());
         assertNull(as.getThrowable());
-        
+
         as.onComplete();
-        
+
         assertFalse(as.hasValue());
         assertFalse(as.hasThrowable());
         assertTrue(as.hasComplete());
@@ -363,19 +371,219 @@ public class AsyncSubjectTest {
     @Test
     public void testCurrentStateMethodsError() {
         AsyncSubject<Object> as = AsyncSubject.create();
-        
+
         assertFalse(as.hasValue());
         assertFalse(as.hasThrowable());
         assertFalse(as.hasComplete());
         assertNull(as.getValue());
         assertNull(as.getThrowable());
-        
+
         as.onError(new TestException());
-        
+
         assertFalse(as.hasValue());
         assertTrue(as.hasThrowable());
         assertFalse(as.hasComplete());
         assertNull(as.getValue());
         assertTrue(as.getThrowable() instanceof TestException);
+    }
+
+
+    @Test
+    public void fusionLive() {
+        AsyncSubject<Integer> ap = new AsyncSubject<Integer>();
+
+        TestObserver<Integer> ts = ObserverFusion.newTest(QueueSubscription.ANY);
+
+        ap.subscribe(ts);
+
+        ts
+        .assertOf(ObserverFusion.<Integer>assertFuseable())
+        .assertOf(ObserverFusion.<Integer>assertFusionMode(QueueSubscription.ASYNC));
+
+        ts.assertNoValues().assertNoErrors().assertNotComplete();
+
+        ap.onNext(1);
+
+        ts.assertNoValues().assertNoErrors().assertNotComplete();
+
+        ap.onComplete();
+
+        ts.assertResult(1);
+    }
+
+    @Test
+    public void fusionOfflie() {
+        AsyncSubject<Integer> ap = new AsyncSubject<Integer>();
+        ap.onNext(1);
+        ap.onComplete();
+
+        TestObserver<Integer> ts = ObserverFusion.newTest(QueueSubscription.ANY);
+
+        ap.subscribe(ts);
+
+        ts
+        .assertOf(ObserverFusion.<Integer>assertFuseable())
+        .assertOf(ObserverFusion.<Integer>assertFusionMode(QueueSubscription.ASYNC))
+        .assertResult(1);
+    }
+
+    @Test
+    public void onSubscribeAfterDone() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        Disposable bs = Disposables.empty();
+        p.onSubscribe(bs);
+
+        assertFalse(bs.isDisposed());
+
+        p.onComplete();
+
+        bs = Disposables.empty();
+        p.onSubscribe(bs);
+
+        assertTrue(bs.isDisposed());
+
+        p.test().assertResult();
+    }
+
+    @Test
+    public void cancelUpfront() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        assertFalse(p.hasObservers());
+
+        p.test().assertEmpty();
+        p.test().assertEmpty();
+
+        p.test(true).assertEmpty();
+
+        assertTrue(p.hasObservers());
+    }
+
+    @Test
+    public void cancelRace() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        for (int i = 0; i < 500; i++) {
+            final TestObserver<Object> ts1 = p.test();
+            final TestObserver<Object> ts2 = p.test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ts1.cancel();
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    ts2.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2, Schedulers.single());
+        }
+    }
+
+    @Test
+    public void onErrorCancelRace() {
+
+        for (int i = 0; i < 500; i++) {
+            final AsyncSubject<Object> p = AsyncSubject.create();
+
+            final TestObserver<Object> ts1 = p.test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ts1.cancel();
+                }
+            };
+
+            final TestException ex = new TestException();
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    p.onError(ex);
+                }
+            };
+
+            TestHelper.race(r1, r2, Schedulers.single());
+
+            if (ts1.errorCount() != 0) {
+                ts1.assertFailure(TestException.class);
+            } else {
+                ts1.assertEmpty();
+            }
+        }
+    }
+
+    @Test
+    public void onNextCrossCancel() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        final TestObserver<Object> ts2 = new TestObserver<Object>();
+        TestObserver<Object> ts1 = new TestObserver<Object>() {
+            @Override
+            public void onNext(Object t) {
+                ts2.cancel();
+                super.onNext(t);
+            }
+        };
+
+        p.subscribe(ts1);
+        p.subscribe(ts2);
+
+        p.onNext(1);
+        p.onComplete();
+
+        ts1.assertResult(1);
+        ts2.assertEmpty();
+    }
+
+    @Test
+    public void onErrorCrossCancel() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        final TestObserver<Object> ts2 = new TestObserver<Object>();
+        TestObserver<Object> ts1 = new TestObserver<Object>() {
+            @Override
+            public void onError(Throwable t) {
+                ts2.cancel();
+                super.onError(t);
+            }
+        };
+
+        p.subscribe(ts1);
+        p.subscribe(ts2);
+
+        p.onError(new TestException());
+
+        ts1.assertFailure(TestException.class);
+        ts2.assertEmpty();
+    }
+
+    @Test
+    public void onCompleteCrossCancel() {
+        AsyncSubject<Object> p = AsyncSubject.create();
+
+        final TestObserver<Object> ts2 = new TestObserver<Object>();
+        TestObserver<Object> ts1 = new TestObserver<Object>() {
+            @Override
+            public void onComplete() {
+                ts2.cancel();
+                super.onComplete();
+            }
+        };
+
+        p.subscribe(ts1);
+        p.subscribe(ts2);
+
+        p.onComplete();
+
+        ts1.assertResult();
+        ts2.assertEmpty();
     }
 }

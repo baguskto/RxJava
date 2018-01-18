@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,201 +13,24 @@
 package io.reactivex.internal.util;
 
 import java.util.Queue;
-import java.util.concurrent.atomic.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.reactivestreams.*;
 
 import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
-import io.reactivex.exceptions.Exceptions;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.BooleanSupplier;
-import io.reactivex.internal.fuseable.SimpleQueue;
+import io.reactivex.internal.fuseable.*;
 import io.reactivex.internal.queue.*;
 
 /**
  * Utility class to help with the queue-drain serialization idiom.
  */
-public enum QueueDrainHelper {
-    ;
-
-    /**
-     * A fast-path queue-drain serialization logic.
-     * <p>The decrementing of the state is left to the drain callback.
-     * @param <T> the instance type
-     * @param instance the work-in-progress counter
-     * @param fastPath called if the instance is not contended.
-     * @param queue called if the instance is contended to queue up work
-     * @param drain called if the instance transitions to the drain state successfully
-     */
-    public static <T> void queueDrain(AtomicInteger instance,
-            Runnable fastPath, Runnable queue, Runnable drain) {
-        if (instance.get() == 0 && instance.compareAndSet(0, 1)) {
-            fastPath.run();
-            if (instance.decrementAndGet() == 0) {
-                return;
-            }
-        } else {
-            queue.run();
-            if (instance.getAndIncrement() != 0) {
-                return;
-            }
-        }
-        drain.run();
-    }
-
-    /**
-     * A fast-path queue-drain serialization logic with the ability to leave the state
-     * in fast-path/drain mode or not continue after the call to queue.
-     * <p>The decrementing of the state is left to the drain callback.
-     * @param <T> the instance type
-     * @param instance the work-in-progress counter
-     * @param fastPath called if the instance is not contended.
-     * @param queue called if the instance is contended to queue up work
-     * @param drain called if the instance transitions to the drain state successfully
-     * @throws Exception if the callbacks throw
-     */
-    public static <T> void queueDrainIf(AtomicInteger instance,
-            BooleanSupplier fastPath, BooleanSupplier queue, Runnable drain) throws Exception  {
-        if (instance.get() == 0 && instance.compareAndSet(0, 1)) {
-            if (fastPath.getAsBoolean()) {
-                return;
-            }
-            if (instance.decrementAndGet() == 0) {
-                return;
-            }
-        } else {
-            if (queue.getAsBoolean()) {
-                return;
-            }
-            if (instance.getAndIncrement() != 0) {
-                return;
-            }
-        }
-        drain.run();
-    }
-
-    /**
-     * A fast-path queue-drain serialization logic where the drain is looped until
-     * the instance state reaches 0 again.
-     * @param <T> the instance type
-     * @param instance the work-in-progress counter
-     * @param fastPath called if the instance is not contended.
-     * @param queue called if the instance is contended to queue up work
-     * @param drain called if the instance transitions to the drain state successfully
-     */
-    public static <T> void queueDrainLoop(AtomicInteger instance,
-            Runnable fastPath, Runnable queue, Runnable drain) {
-        if (instance.get() == 0 && instance.compareAndSet(0, 1)) {
-            fastPath.run();
-            if (instance.decrementAndGet() == 0) {
-                return;
-            }
-        } else {
-            queue.run();
-            if (instance.getAndIncrement() != 0) {
-                return;
-            }
-        }
-        int missed = 1;
-        for (;;) {
-            drain.run();
-            
-            missed = instance.addAndGet(-missed);
-            if (missed == 0) {
-                return;
-            }
-        }
-    }
-    
-    /**
-     * A fast-path queue-drain serialization logic with looped drain call and the ability to leave the state
-     * in fast-path/drain mode or not continue after the call to queue.
-     * @param <T> the instance type
-     * @param instance the work-in-progress counter
-     * @param fastPath called if the instance is not contended.
-     * @param queue called if the instance is contended to queue up work
-     * @param drain called if the instance transitions to the drain state successfully
-     * @throws Exception if the callbacks throw
-     */
-    public static <T> void queueDrainLoopIf(AtomicInteger instance,
-            BooleanSupplier fastPath, BooleanSupplier queue, BooleanSupplier drain) throws Exception {
-        if (instance.get() == 0 && instance.compareAndSet(0, 1)) {
-            if (fastPath.getAsBoolean()) {
-                return;
-            }
-            if (instance.decrementAndGet() == 0) {
-                return;
-            }
-        } else {
-            if (queue.getAsBoolean()) {
-                return;
-            }
-            if (instance.getAndIncrement() != 0) {
-                return;
-            }
-        }
-        int missed = 1;
-        for (;;) {
-            
-            if (drain.getAsBoolean()) {
-                return;
-            }
-            
-            missed = instance.addAndGet(-missed);
-            if (missed == 0) {
-                return;
-            }
-        }
-    }
-
-    public static <T, U> void drainLoop(SimpleQueue<T> q, Subscriber<? super U> a, boolean delayError, QueueDrain<T, U> qd) {
-        
-        int missed = 1;
-        
-        for (;;) {
-            if (checkTerminated(qd.done(), q.isEmpty(), a, delayError, q, qd)) {
-                return;
-            }
-            
-            long r = qd.requested();
-            long e = 0L;
-            
-            while (e != r) {
-                boolean d = qd.done();
-                T v;
-                
-                try {
-                    v = q.poll();
-                } catch (Throwable ex) {
-                    Exceptions.throwIfFatal(ex);
-                    a.onError(ex);
-                    return;
-                }
-                
-                boolean empty = v == null;
-                
-                if (checkTerminated(d, empty, a, delayError, q, qd)) {
-                    return;
-                }
-                
-                if (empty) {
-                    break;
-                }
-                
-                if (qd.accept(a, v)) {
-                    e++;
-                }
-            }
-            
-            if (e != 0L && r != Long.MAX_VALUE) {
-                qd.produced(e);
-            }
-            
-            missed = qd.leave(-missed);
-            if (missed == 0) {
-                break;
-            }
-        }
+public final class QueueDrainHelper {
+    /** Utility class. */
+    private QueueDrainHelper() {
+        throw new IllegalStateException("No instances!");
     }
 
     /**
@@ -220,33 +43,25 @@ public enum QueueDrainHelper {
      * @param dispose the disposable to call when termination happens and cleanup is necessary
      * @param qd the QueueDrain instance that gives status information to the drain logic
      */
-    public static <T, U> void drainMaxLoop(SimpleQueue<T> q, Subscriber<? super U> a, boolean delayError, 
+    public static <T, U> void drainMaxLoop(SimplePlainQueue<T> q, Subscriber<? super U> a, boolean delayError,
             Disposable dispose, QueueDrain<T, U> qd) {
         int missed = 1;
-        
+
         for (;;) {
             for (;;) {
                 boolean d = qd.done();
-                
-                T v;
-                
-                try {
-                    v = q.poll();
-                } catch (Throwable ex) {
-                    Exceptions.throwIfFatal(ex);
-                    a.onError(ex);
-                    return;
-                }
-                
+
+                T v = q.poll();
+
                 boolean empty = v == null;
-                
+
                 if (checkTerminated(d, empty, a, delayError, q, qd)) {
                     if (dispose != null) {
                         dispose.dispose();
                     }
                     return;
                 }
-                
+
                 if (empty) {
                     break;
                 }
@@ -263,11 +78,11 @@ public enum QueueDrainHelper {
                     if (dispose != null) {
                         dispose.dispose();
                     }
-                    a.onError(new IllegalStateException("Could not emit value due to lack of requests."));
+                    a.onError(new MissingBackpressureException("Could not emit value due to lack of requests."));
                     return;
                 }
             }
-            
+
             missed = qd.leave(-missed);
             if (missed == 0) {
                 break;
@@ -275,13 +90,13 @@ public enum QueueDrainHelper {
         }
     }
 
-    public static <T, U> boolean checkTerminated(boolean d, boolean empty, 
+    public static <T, U> boolean checkTerminated(boolean d, boolean empty,
             Subscriber<?> s, boolean delayError, SimpleQueue<?> q, QueueDrain<T, U> qd) {
         if (qd.cancelled()) {
             q.clear();
             return true;
         }
-        
+
         if (d) {
             if (delayError) {
                 if (empty) {
@@ -306,44 +121,35 @@ public enum QueueDrainHelper {
                 }
             }
         }
-        
+
         return false;
     }
-    
-    public static <T, U> void drainLoop(SimpleQueue<T> q, Observer<? super U> a, boolean delayError, Disposable dispose, NbpQueueDrain<T, U> qd) {
-        
+
+    public static <T, U> void drainLoop(SimplePlainQueue<T> q, Observer<? super U> a, boolean delayError, Disposable dispose, ObservableQueueDrain<T, U> qd) {
+
         int missed = 1;
-        
+
         for (;;) {
             if (checkTerminated(qd.done(), q.isEmpty(), a, delayError, q, dispose, qd)) {
                 return;
             }
-            
+
             for (;;) {
                 boolean d = qd.done();
-                T v;
-                
-                try {
-                    v = q.poll();
-                } catch (Throwable ex) {
-                    Exceptions.throwIfFatal(ex);
-                    a.onError(ex);
-                    return;
-                }
-                
+                T v = q.poll();
                 boolean empty = v == null;
-                
+
                 if (checkTerminated(d, empty, a, delayError, q, dispose, qd)) {
                     return;
                 }
-                
+
                 if (empty) {
                     break;
                 }
 
                 qd.accept(a, v);
             }
-            
+
             missed = qd.leave(-missed);
             if (missed == 0) {
                 break;
@@ -351,18 +157,20 @@ public enum QueueDrainHelper {
         }
     }
 
-    public static <T, U> boolean checkTerminated(boolean d, boolean empty, 
-            Observer<?> s, boolean delayError, SimpleQueue<?> q, Disposable disposable, NbpQueueDrain<T, U> qd) {
+    public static <T, U> boolean checkTerminated(boolean d, boolean empty,
+            Observer<?> s, boolean delayError, SimpleQueue<?> q, Disposable disposable, ObservableQueueDrain<T, U> qd) {
         if (qd.cancelled()) {
             q.clear();
             disposable.dispose();
             return true;
         }
-        
+
         if (d) {
             if (delayError) {
                 if (empty) {
-                    disposable.dispose();
+                    if (disposable != null) {
+                        disposable.dispose();
+                    }
                     Throwable err = qd.error();
                     if (err != null) {
                         s.onError(err);
@@ -375,23 +183,27 @@ public enum QueueDrainHelper {
                 Throwable err = qd.error();
                 if (err != null) {
                     q.clear();
-                    disposable.dispose();
+                    if (disposable != null) {
+                        disposable.dispose();
+                    }
                     s.onError(err);
                     return true;
                 } else
                 if (empty) {
-                    disposable.dispose();
+                    if (disposable != null) {
+                        disposable.dispose();
+                    }
                     s.onComplete();
                     return true;
                 }
             }
         }
-        
+
         return false;
     }
-    
+
     /**
-     * Creates a queue: spsc-array if capacityHint is positive and 
+     * Creates a queue: spsc-array if capacityHint is positive and
      * spsc-linked-array if capacityHint is negative; in both cases, the
      * capacity is the absolute value of prefetch.
      * @param <T> the value type of the queue
@@ -400,11 +212,11 @@ public enum QueueDrainHelper {
      */
     public static <T> SimpleQueue<T> createQueue(int capacityHint) {
         if (capacityHint < 0) {
-            return new SpscLinkedArrayQueue<T>(-capacityHint); 
+            return new SpscLinkedArrayQueue<T>(-capacityHint);
         }
         return new SpscArrayQueue<T>(capacityHint);
     }
-    
+
     /**
      * Requests Long.MAX_VALUE if prefetch is negative or the exact
      * amount if prefetch is positive.
@@ -414,13 +226,13 @@ public enum QueueDrainHelper {
     public static void request(Subscription s, int prefetch) {
         s.request(prefetch < 0 ? Long.MAX_VALUE : prefetch);
     }
-    
+
     static final long COMPLETED_MASK = 0x8000000000000000L;
     static final long REQUESTED_MASK = 0x7FFFFFFFFFFFFFFFL;
 
     /**
      * Accumulates requests (not validated) and handles the completed mode draining of the queue based on the requests.
-     * 
+     *
      * <p>
      * Post-completion backpressure handles the case when a source produces values based on
      * requests when it is active but more values are available even after its completion.
@@ -474,7 +286,7 @@ public enum QueueDrainHelper {
             return true;
         }
     }
-    
+
     /**
      * Drains the queue based on the outstanding requests in post-completed mode (only!).
      *
@@ -497,17 +309,17 @@ public enum QueueDrainHelper {
 //                if (isCancelled.getAsBoolean()) {
 //                    break;
 //                }
-//                
+//
 //                T v = queue.poll();
-//                
+//
 //                if (v == null) {
 //                    actual.onComplete();
 //                    break;
 //                }
-//                
+//
 //                actual.onNext(v);
 //            }
-//            
+//
 //            return true;
 //        }
 
@@ -558,14 +370,14 @@ public enum QueueDrainHelper {
 
     /**
      * Signals the completion of the main sequence and switches to post-completion replay mode.
-     * 
+     *
      * <p>
      * Don't modify the queue after calling this method!
-     * 
+     *
      * <p>
      * Post-completion backpressure handles the case when a source produces values based on
      * requests when it is active but more values are available even after its completion.
-     * In this case, the onCompleted() can't just emit the contents of the queue but has to
+     * In this case, the onComplete() can't just emit the contents of the queue but has to
      * coordinate with the requested amounts. This requires two distinct modes: active and
      * completed. In active mode, requests flow through and the queue is not accessed but
      * in completed mode, requests no-longer reach the upstream but help in draining the queue.

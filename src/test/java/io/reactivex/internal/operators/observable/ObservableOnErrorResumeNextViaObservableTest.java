@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.*;
 
 import org.junit.*;
@@ -35,10 +34,10 @@ public class ObservableOnErrorResumeNextViaObservableTest {
         TestObservable f = new TestObservable(s, "one", "fail", "two", "three");
         Observable<String> w = Observable.unsafeCreate(f);
         Observable<String> resume = Observable.just("twoResume", "threeResume");
-        Observable<String> NbpObservable = w.onErrorResumeNext(resume);
+        Observable<String> observable = w.onErrorResumeNext(resume);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        NbpObservable.subscribe(NbpObserver);
+        Observer<String> observer = TestHelper.mockObserver();
+        observable.subscribe(observer);
 
         try {
             f.t.join();
@@ -46,13 +45,13 @@ public class ObservableOnErrorResumeNextViaObservableTest {
             fail(e.getMessage());
         }
 
-        verify(NbpObserver, Mockito.never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, Mockito.never()).onNext("two");
-        verify(NbpObserver, Mockito.never()).onNext("three");
-        verify(NbpObserver, times(1)).onNext("twoResume");
-        verify(NbpObserver, times(1)).onNext("threeResume");
+        verify(observer, Mockito.never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verify(observer, times(1)).onNext("one");
+        verify(observer, Mockito.never()).onNext("two");
+        verify(observer, Mockito.never()).onNext("three");
+        verify(observer, times(1)).onNext("twoResume");
+        verify(observer, times(1)).onNext("threeResume");
     }
 
     @Test
@@ -60,27 +59,28 @@ public class ObservableOnErrorResumeNextViaObservableTest {
         Disposable sr = mock(Disposable.class);
         // Trigger multiple failures
         Observable<String> w = Observable.just("one", "fail", "two", "three", "fail");
-        // Resume NbpObservable is async
+        // Resume Observable is async
         TestObservable f = new TestObservable(sr, "twoResume", "threeResume");
         Observable<String> resume = Observable.unsafeCreate(f);
 
-        // Introduce map function that fails intermittently (Map does not prevent this when the NbpObserver is a
+        // Introduce map function that fails intermittently (Map does not prevent this when the Observer is a
         //  rx.operator incl onErrorResumeNextViaObservable)
         w = w.map(new Function<String, String>() {
             @Override
             public String apply(String s) {
-                if ("fail".equals(s))
+                if ("fail".equals(s)) {
                     throw new RuntimeException("Forced Failure");
+                }
                 System.out.println("BadMapper:" + s);
                 return s;
             }
         });
 
-        Observable<String> NbpObservable = w.onErrorResumeNext(resume);
+        Observable<String> observable = w.onErrorResumeNext(resume);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
-        NbpObservable.subscribe(NbpObserver);
+        Observer<String> observer = TestHelper.mockObserver();
+
+        observable.subscribe(observer);
 
         try {
             f.t.join();
@@ -88,15 +88,15 @@ public class ObservableOnErrorResumeNextViaObservableTest {
             fail(e.getMessage());
         }
 
-        verify(NbpObserver, Mockito.never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, Mockito.never()).onNext("two");
-        verify(NbpObserver, Mockito.never()).onNext("three");
-        verify(NbpObserver, times(1)).onNext("twoResume");
-        verify(NbpObserver, times(1)).onNext("threeResume");
+        verify(observer, Mockito.never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verify(observer, times(1)).onNext("one");
+        verify(observer, Mockito.never()).onNext("two");
+        verify(observer, Mockito.never()).onNext("three");
+        verify(observer, times(1)).onNext("twoResume");
+        verify(observer, times(1)).onNext("threeResume");
     }
-    
+
     @Test
     @Ignore("Publishers should not throw")
     public void testResumeNextWithFailureOnSubscribe() {
@@ -106,19 +106,19 @@ public class ObservableOnErrorResumeNextViaObservableTest {
             public void subscribe(Observer<? super String> t1) {
                 throw new RuntimeException("force failure");
             }
-            
+
         });
         Observable<String> resume = Observable.just("resume");
-        Observable<String> NbpObservable = testObservable.onErrorResumeNext(resume);
+        Observable<String> observable = testObservable.onErrorResumeNext(resume);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        NbpObservable.subscribe(NbpObserver);
+        Observer<String> observer = TestHelper.mockObserver();
+        observable.subscribe(observer);
 
-        verify(NbpObserver, Mockito.never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verify(NbpObserver, times(1)).onNext("resume");
+        verify(observer, Mockito.never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verify(observer, times(1)).onNext("resume");
     }
-    
+
     @Test
     @Ignore("Publishers should not throw")
     public void testResumeNextWithFailureOnSubscribeAsync() {
@@ -128,38 +128,38 @@ public class ObservableOnErrorResumeNextViaObservableTest {
             public void subscribe(Observer<? super String> t1) {
                 throw new RuntimeException("force failure");
             }
-            
+
         });
         Observable<String> resume = Observable.just("resume");
-        Observable<String> NbpObservable = testObservable.subscribeOn(Schedulers.io()).onErrorResumeNext(resume);
+        Observable<String> observable = testObservable.subscribeOn(Schedulers.io()).onErrorResumeNext(resume);
 
         @SuppressWarnings("unchecked")
-        DefaultObserver<String> NbpObserver = mock(DefaultObserver.class);
-        TestObserver<String> ts = new TestObserver<String>(NbpObserver);
-        NbpObservable.subscribe(ts);
+        DefaultObserver<String> observer = mock(DefaultObserver.class);
+        TestObserver<String> ts = new TestObserver<String>(observer);
+        observable.subscribe(ts);
 
         ts.awaitTerminalEvent();
-        
-        verify(NbpObserver, Mockito.never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verify(NbpObserver, times(1)).onNext("resume");
+
+        verify(observer, Mockito.never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verify(observer, times(1)).onNext("resume");
     }
 
-    private static class TestObservable implements ObservableSource<String> {
+    static class TestObservable implements ObservableSource<String> {
 
         final Disposable s;
         final String[] values;
-        Thread t = null;
+        Thread t;
 
-        public TestObservable(Disposable s, String... values) {
+        TestObservable(Disposable s, String... values) {
             this.s = s;
             this.values = values;
         }
 
         @Override
-        public void subscribe(final Observer<? super String> NbpObserver) {
+        public void subscribe(final Observer<? super String> observer) {
             System.out.println("TestObservable subscribed to ...");
-            NbpObserver.onSubscribe(s);
+            observer.onSubscribe(s);
             t = new Thread(new Runnable() {
 
                 @Override
@@ -167,16 +167,17 @@ public class ObservableOnErrorResumeNextViaObservableTest {
                     try {
                         System.out.println("running TestObservable thread");
                         for (String s : values) {
-                            if ("fail".equals(s))
+                            if ("fail".equals(s)) {
                                 throw new RuntimeException("Forced Failure");
+                            }
                             System.out.println("TestObservable onNext: " + s);
-                            NbpObserver.onNext(s);
+                            observer.onNext(s);
                         }
-                        System.out.println("TestObservable onCompleted");
-                        NbpObserver.onComplete();
+                        System.out.println("TestObservable onComplete");
+                        observer.onComplete();
                     } catch (Throwable e) {
                         System.out.println("TestObservable onError: " + e);
-                        NbpObserver.onError(e);
+                        observer.onError(e);
                     }
                 }
 
@@ -186,7 +187,7 @@ public class ObservableOnErrorResumeNextViaObservableTest {
             System.out.println("done starting TestObservable thread");
         }
     }
-    
+
     @Test
     public void testBackpressure() {
         TestObserver<Integer> ts = new TestObserver<Integer>();
@@ -194,7 +195,7 @@ public class ObservableOnErrorResumeNextViaObservableTest {
                 .onErrorResumeNext(Observable.just(1))
                 .observeOn(Schedulers.computation())
                 .map(new Function<Integer, Integer>() {
-                    int c = 0;
+                    int c;
 
                     @Override
                     public Integer apply(Integer t1) {

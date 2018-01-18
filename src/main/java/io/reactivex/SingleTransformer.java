@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -13,7 +13,7 @@
 
 package io.reactivex;
 
-import io.reactivex.functions.Function;
+import io.reactivex.annotations.*;
 
 /**
  * Interface to compose Singles.
@@ -21,6 +21,13 @@ import io.reactivex.functions.Function;
  * @param <Upstream> the upstream value type
  * @param <Downstream> the downstream value type
  */
-public interface SingleTransformer<Upstream, Downstream> extends Function<Single<Upstream>, SingleSource<Downstream>> {
-
+public interface SingleTransformer<Upstream, Downstream> {
+    /**
+     * Applies a function to the upstream Single and returns a SingleSource with
+     * optionally different element type.
+     * @param upstream the upstream Single instance
+     * @return the transformed SingleSource instance
+     */
+    @NonNull
+    SingleSource<Downstream> apply(@NonNull Single<Upstream> upstream);
 }

@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -23,8 +23,8 @@ import org.mockito.Mockito;
 import org.reactivestreams.Subscriber;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.Exceptions;
 import io.reactivex.functions.Action;
+import io.reactivex.internal.util.ExceptionHelper;
 import io.reactivex.subscribers.TestSubscriber;
 
 public class FlowableDoAfterTerminateTest {
@@ -43,7 +43,7 @@ public class FlowableDoAfterTerminateTest {
         try {
             verify(aAction0, times(1)).run();
         } catch (Throwable ex) {
-            throw Exceptions.propagate(ex);
+            throw ExceptionHelper.wrapOrThrow(ex);
         }
     }
 
@@ -66,7 +66,7 @@ public class FlowableDoAfterTerminateTest {
             assertEquals("onAfterTerminate is null", expected.getMessage());
         }
     }
-    
+
     @Test
     public void nullFinallyActionShouldBeCheckedASAP() {
         try {

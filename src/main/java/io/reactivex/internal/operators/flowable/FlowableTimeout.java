@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,368 +13,378 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.*;
 
 import org.reactivestreams.*;
 
+import io.reactivex.*;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.exceptions.Exceptions;
 import io.reactivex.functions.Function;
-import io.reactivex.internal.disposables.DisposableHelper;
-import io.reactivex.internal.subscribers.flowable.FullArbiterSubscriber;
+import io.reactivex.internal.disposables.SequentialDisposable;
+import io.reactivex.internal.functions.ObjectHelper;
+import io.reactivex.internal.operators.flowable.FlowableTimeoutTimed.TimeoutSupport;
 import io.reactivex.internal.subscriptions.*;
 import io.reactivex.plugins.RxJavaPlugins;
-import io.reactivex.subscribers.*;
 
 public final class FlowableTimeout<T, U, V> extends AbstractFlowableWithUpstream<T, T> {
-    final Callable<? extends Publisher<U>> firstTimeoutSelector;
-    final Function<? super T, ? extends Publisher<V>> timeoutSelector; 
+    final Publisher<U> firstTimeoutIndicator;
+    final Function<? super T, ? extends Publisher<V>> itemTimeoutIndicator;
     final Publisher<? extends T> other;
 
     public FlowableTimeout(
-            Publisher<T> source,
-            Callable<? extends Publisher<U>> firstTimeoutSelector,
-            Function<? super T, ? extends Publisher<V>> timeoutSelector, 
+            Flowable<T> source,
+            Publisher<U> firstTimeoutIndicator,
+            Function<? super T, ? extends Publisher<V>> itemTimeoutIndicator,
             Publisher<? extends T> other) {
         super(source);
-        this.firstTimeoutSelector = firstTimeoutSelector;
-        this.timeoutSelector = timeoutSelector;
+        this.firstTimeoutIndicator = firstTimeoutIndicator;
+        this.itemTimeoutIndicator = itemTimeoutIndicator;
         this.other = other;
     }
 
     @Override
     protected void subscribeActual(Subscriber<? super T> s) {
         if (other == null) {
-            source.subscribe(new TimeoutSubscriber<T, U, V>(
-                    new SerializedSubscriber<T>(s), 
-                    firstTimeoutSelector, timeoutSelector));
+            TimeoutSubscriber<T> parent = new TimeoutSubscriber<T>(s, itemTimeoutIndicator);
+            s.onSubscribe(parent);
+            parent.startFirstTimeout(firstTimeoutIndicator);
+            source.subscribe(parent);
         } else {
-            source.subscribe(new TimeoutOtherSubscriber<T, U, V>(
-                    s, firstTimeoutSelector, timeoutSelector, other));
+            TimeoutFallbackSubscriber<T> parent = new TimeoutFallbackSubscriber<T>(s, itemTimeoutIndicator, other);
+            s.onSubscribe(parent);
+            parent.startFirstTimeout(firstTimeoutIndicator);
+            source.subscribe(parent);
         }
     }
-    
-    static final class TimeoutSubscriber<T, U, V> implements Subscriber<T>, Subscription, OnTimeout {
-        final Subscriber<? super T> actual;
-        final Callable<? extends Publisher<U>> firstTimeoutSelector; 
-        final Function<? super T, ? extends Publisher<V>> timeoutSelector; 
 
-        Subscription s;
-        
-        volatile boolean cancelled;
-        
-        volatile long index;
-        
-        final AtomicReference<Disposable> timeout = new AtomicReference<Disposable>();
-        
-        public TimeoutSubscriber(Subscriber<? super T> actual,
-                Callable<? extends Publisher<U>> firstTimeoutSelector,
-                Function<? super T, ? extends Publisher<V>> timeoutSelector) {
+    interface TimeoutSelectorSupport extends TimeoutSupport {
+        void onTimeoutError(long idx, Throwable ex);
+    }
+
+    static final class TimeoutSubscriber<T> extends AtomicLong
+    implements FlowableSubscriber<T>, Subscription, TimeoutSelectorSupport {
+
+        private static final long serialVersionUID = 3764492702657003550L;
+
+        final Subscriber<? super T> actual;
+
+        final Function<? super T, ? extends Publisher<?>> itemTimeoutIndicator;
+
+        final SequentialDisposable task;
+
+        final AtomicReference<Subscription> upstream;
+
+        final AtomicLong requested;
+
+        TimeoutSubscriber(Subscriber<? super T> actual, Function<? super T, ? extends Publisher<?>> itemTimeoutIndicator) {
             this.actual = actual;
-            this.firstTimeoutSelector = firstTimeoutSelector;
-            this.timeoutSelector = timeoutSelector;
+            this.itemTimeoutIndicator = itemTimeoutIndicator;
+            this.task = new SequentialDisposable();
+            this.upstream = new AtomicReference<Subscription>();
+            this.requested = new AtomicLong();
         }
-        
+
         @Override
         public void onSubscribe(Subscription s) {
-            if (!SubscriptionHelper.validate(this.s, s)) {
-                return;
-            }
-            this.s = s;
-            
-            if (cancelled) {
-                return;
-            }
-            
-            Subscriber<? super T> a = actual;
-            
-            Publisher<U> p;
-            
-            if (firstTimeoutSelector != null) {
-                try {
-                    p = firstTimeoutSelector.call();
-                } catch (Throwable ex) {
-                    Exceptions.throwIfFatal(ex);
-                    cancel();
-                    EmptySubscription.error(ex, a);
-                    return;
-                }
-                
-                if (p == null) {
-                    cancel();
-                    EmptySubscription.error(new NullPointerException("The first timeout publisher is null"), a);
-                    return;
-                }
-                
-                TimeoutInnerSubscriber<T, U, V> tis = new TimeoutInnerSubscriber<T, U, V>(this, 0);
-                
-                if (timeout.compareAndSet(null, tis)) {
-                    a.onSubscribe(this);
-                    p.subscribe(tis);
-                }
-            } else {
-                a.onSubscribe(this);
-            }
+            SubscriptionHelper.deferredSetOnce(upstream, requested, s);
         }
-        
+
         @Override
         public void onNext(T t) {
-            long idx = index + 1;
-            index = idx;
+            long idx = get();
+            if (idx == Long.MAX_VALUE || !compareAndSet(idx, idx + 1)) {
+                return;
+            }
 
-            actual.onNext(t);
-            
-            Disposable d = timeout.get();
+            Disposable d = task.get();
             if (d != null) {
                 d.dispose();
             }
-            
-            Publisher<V> p;
-            
+
+            actual.onNext(t);
+
+            Publisher<?> itemTimeoutPublisher;
+
             try {
-                p = timeoutSelector.apply(t);
-            } catch (Throwable e) {
-                Exceptions.throwIfFatal(e);
-                cancel();
-                actual.onError(e);
+                itemTimeoutPublisher = ObjectHelper.requireNonNull(
+                        itemTimeoutIndicator.apply(t),
+                        "The itemTimeoutIndicator returned a null Publisher.");
+            } catch (Throwable ex) {
+                Exceptions.throwIfFatal(ex);
+                upstream.get().cancel();
+                getAndSet(Long.MAX_VALUE);
+                actual.onError(ex);
                 return;
             }
-            
-            if (p == null) {
-                cancel();
-                actual.onError(new NullPointerException("The publisher returned is null"));
-                return;
-            }
-            
-            TimeoutInnerSubscriber<T, U, V> tis = new TimeoutInnerSubscriber<T, U, V>(this, idx);
-            
-            if (timeout.compareAndSet(d, tis)) {
-                p.subscribe(tis);
+
+            TimeoutConsumer consumer = new TimeoutConsumer(idx + 1, this);
+            if (task.replace(consumer)) {
+                itemTimeoutPublisher.subscribe(consumer);
             }
         }
-        
+
+        void startFirstTimeout(Publisher<?> firstTimeoutIndicator) {
+            if (firstTimeoutIndicator != null) {
+                TimeoutConsumer consumer = new TimeoutConsumer(0L, this);
+                if (task.replace(consumer)) {
+                    firstTimeoutIndicator.subscribe(consumer);
+                }
+            }
+        }
+
         @Override
         public void onError(Throwable t) {
-            cancel();
-            actual.onError(t);
+            if (getAndSet(Long.MAX_VALUE) != Long.MAX_VALUE) {
+                task.dispose();
+
+                actual.onError(t);
+            } else {
+                RxJavaPlugins.onError(t);
+            }
         }
-        
+
         @Override
         public void onComplete() {
-            cancel();
-            actual.onComplete();
+            if (getAndSet(Long.MAX_VALUE) != Long.MAX_VALUE) {
+                task.dispose();
+
+                actual.onComplete();
+            }
         }
-        
+
         @Override
-        public void request(long n) {
-            s.request(n);
-        }
-        
-        @Override
-        public void cancel() {
-            cancelled = true;
-            s.cancel();
-            DisposableHelper.dispose(timeout);
-        }
-        
-        @Override
-        public void timeout(long idx) {
-            if (idx == index) {
-                cancel();
+        public void onTimeout(long idx) {
+            if (compareAndSet(idx, Long.MAX_VALUE)) {
+                SubscriptionHelper.cancel(upstream);
+
                 actual.onError(new TimeoutException());
             }
         }
-    }
-    
-    interface OnTimeout {
-        void timeout(long index);
-        
-        void onError(Throwable e);
-    }
-    
-    static final class TimeoutInnerSubscriber<T, U, V> extends DisposableSubscriber<Object> {
-        final OnTimeout parent;
-        final long index;
-        
-        boolean done;
-        
-        public TimeoutInnerSubscriber(OnTimeout parent, final long index) {
-            this.parent = parent;
-            this.index = index;
-        }
-        
+
         @Override
-        public void onNext(Object t) {
-            if (done) {
-                return;
+        public void onTimeoutError(long idx, Throwable ex) {
+            if (compareAndSet(idx, Long.MAX_VALUE)) {
+                SubscriptionHelper.cancel(upstream);
+
+                actual.onError(ex);
+            } else {
+                RxJavaPlugins.onError(ex);
             }
-            done = true;
-            cancel();
-            parent.timeout(index);
         }
-        
+
         @Override
-        public void onError(Throwable t) {
-            parent.onError(t);
+        public void request(long n) {
+            SubscriptionHelper.deferredRequest(upstream, requested, n);
         }
-        
+
         @Override
-        public void onComplete() {
-            if (done) {
-                return;
-            }
-            done = true;
-            parent.timeout(index);
+        public void cancel() {
+            SubscriptionHelper.cancel(upstream);
+            task.dispose();
         }
     }
-    
-    static final class TimeoutOtherSubscriber<T, U, V> implements Subscriber<T>, Disposable, OnTimeout {
+
+    static final class TimeoutFallbackSubscriber<T> extends SubscriptionArbiter
+    implements FlowableSubscriber<T>, TimeoutSelectorSupport {
+
+        private static final long serialVersionUID = 3764492702657003550L;
+
         final Subscriber<? super T> actual;
-        final Callable<? extends Publisher<U>> firstTimeoutSelector; 
-        final Function<? super T, ? extends Publisher<V>> timeoutSelector;
-        final Publisher<? extends T> other;
-        final FullArbiter<T> arbiter;
-        
-        Subscription s;
-        
-        boolean done;
-        
-        volatile boolean cancelled;
-        
-        volatile long index;
-        
-        final AtomicReference<Disposable> timeout = new AtomicReference<Disposable>();
-        
-        public TimeoutOtherSubscriber(Subscriber<? super T> actual,
-                Callable<? extends Publisher<U>> firstTimeoutSelector,
-                Function<? super T, ? extends Publisher<V>> timeoutSelector, Publisher<? extends T> other) {
+
+        final Function<? super T, ? extends Publisher<?>> itemTimeoutIndicator;
+
+        final SequentialDisposable task;
+
+        final AtomicReference<Subscription> upstream;
+
+        final AtomicLong index;
+
+        Publisher<? extends T> fallback;
+
+        long consumed;
+
+        TimeoutFallbackSubscriber(Subscriber<? super T> actual,
+                Function<? super T, ? extends Publisher<?>> itemTimeoutIndicator,
+                        Publisher<? extends T> fallback) {
             this.actual = actual;
-            this.firstTimeoutSelector = firstTimeoutSelector;
-            this.timeoutSelector = timeoutSelector;
-            this.other = other;
-            this.arbiter = new FullArbiter<T>(actual, this, 8);
+            this.itemTimeoutIndicator = itemTimeoutIndicator;
+            this.task = new SequentialDisposable();
+            this.upstream = new AtomicReference<Subscription>();
+            this.fallback = fallback;
+            this.index = new AtomicLong();
         }
-        
+
         @Override
         public void onSubscribe(Subscription s) {
-            if (!SubscriptionHelper.validate(this.s, s)) {
-                return;
-            }
-            this.s = s;
-            
-            if (!arbiter.setSubscription(s)) {
-                return;
-            }
-            Subscriber<? super T> a = actual;
-            
-            if (firstTimeoutSelector != null) {
-                Publisher<U> p;
-                
-                try {
-                    p = firstTimeoutSelector.call();
-                } catch (Throwable ex) {
-                    Exceptions.throwIfFatal(ex);
-                    dispose();
-                    EmptySubscription.error(ex, a);
-                    return;
-                }
-                
-                if (p == null) {
-                    dispose();
-                    EmptySubscription.error(new NullPointerException("The first timeout publisher is null"), a);
-                    return;
-                }
-                
-                TimeoutInnerSubscriber<T, U, V> tis = new TimeoutInnerSubscriber<T, U, V>(this, 0);
-                
-                if (timeout.compareAndSet(null, tis)) {
-                    a.onSubscribe(arbiter);
-                    p.subscribe(tis);
-                }
-            } else {
-                a.onSubscribe(arbiter);
+            if (SubscriptionHelper.setOnce(this.upstream, s)) {
+                setSubscription(s);
             }
         }
-        
+
         @Override
         public void onNext(T t) {
-            if (done) {
+            long idx = index.get();
+            if (idx == Long.MAX_VALUE || !index.compareAndSet(idx, idx + 1)) {
                 return;
             }
-            long idx = index + 1;
-            index = idx;
 
-            if (!arbiter.onNext(t, s)) {
-                return;
-            }
-            
-            Disposable d = timeout.get();
+            Disposable d = task.get();
             if (d != null) {
                 d.dispose();
             }
-            
-            Publisher<V> p;
-            
+
+            consumed++;
+
+            actual.onNext(t);
+
+            Publisher<?> itemTimeoutPublisher;
+
             try {
-                p = timeoutSelector.apply(t);
-            } catch (Throwable e) {
-                Exceptions.throwIfFatal(e);
-                actual.onError(e);
+                itemTimeoutPublisher = ObjectHelper.requireNonNull(
+                        itemTimeoutIndicator.apply(t),
+                        "The itemTimeoutIndicator returned a null Publisher.");
+            } catch (Throwable ex) {
+                Exceptions.throwIfFatal(ex);
+                upstream.get().cancel();
+                index.getAndSet(Long.MAX_VALUE);
+                actual.onError(ex);
                 return;
             }
-            
-            if (p == null) {
-                actual.onError(new NullPointerException("The publisher returned is null"));
-                return;
-            }
-            
-            TimeoutInnerSubscriber<T, U, V> tis = new TimeoutInnerSubscriber<T, U, V>(this, idx);
-            
-            if (timeout.compareAndSet(d, tis)) {
-                p.subscribe(tis);
+
+            TimeoutConsumer consumer = new TimeoutConsumer(idx + 1, this);
+            if (task.replace(consumer)) {
+                itemTimeoutPublisher.subscribe(consumer);
             }
         }
-        
+
+        void startFirstTimeout(Publisher<?> firstTimeoutIndicator) {
+            if (firstTimeoutIndicator != null) {
+                TimeoutConsumer consumer = new TimeoutConsumer(0L, this);
+                if (task.replace(consumer)) {
+                    firstTimeoutIndicator.subscribe(consumer);
+                }
+            }
+        }
+
         @Override
         public void onError(Throwable t) {
-            if (done) {
+            if (index.getAndSet(Long.MAX_VALUE) != Long.MAX_VALUE) {
+                task.dispose();
+
+                actual.onError(t);
+
+                task.dispose();
+            } else {
                 RxJavaPlugins.onError(t);
-                return;
             }
-            done = true;
-            dispose();
-            arbiter.onError(t, s);
         }
-        
+
         @Override
         public void onComplete() {
-            if (done) {
-                return;
+            if (index.getAndSet(Long.MAX_VALUE) != Long.MAX_VALUE) {
+                task.dispose();
+
+                actual.onComplete();
+
+                task.dispose();
             }
-            done = true;
-            dispose();
-            arbiter.onComplete(s);
         }
-        
+
+        @Override
+        public void onTimeout(long idx) {
+            if (index.compareAndSet(idx, Long.MAX_VALUE)) {
+                SubscriptionHelper.cancel(upstream);
+
+                Publisher<? extends T> f = fallback;
+                fallback = null;
+
+                long c = consumed;
+                if (c != 0L) {
+                    produced(c);
+                }
+
+                f.subscribe(new FlowableTimeoutTimed.FallbackSubscriber<T>(actual, this));
+            }
+        }
+
+        @Override
+        public void onTimeoutError(long idx, Throwable ex) {
+            if (index.compareAndSet(idx, Long.MAX_VALUE)) {
+                SubscriptionHelper.cancel(upstream);
+
+                actual.onError(ex);
+            } else {
+                RxJavaPlugins.onError(ex);
+            }
+        }
+
+        @Override
+        public void cancel() {
+            super.cancel();
+            task.dispose();
+        }
+    }
+
+    static final class TimeoutConsumer extends AtomicReference<Subscription>
+    implements FlowableSubscriber<Object>, Disposable {
+
+        private static final long serialVersionUID = 8708641127342403073L;
+
+        final TimeoutSelectorSupport parent;
+
+        final long idx;
+
+        TimeoutConsumer(long idx, TimeoutSelectorSupport parent) {
+            this.idx = idx;
+            this.parent = parent;
+        }
+
+        @Override
+        public void onSubscribe(Subscription s) {
+            if (SubscriptionHelper.setOnce(this, s)) {
+                s.request(Long.MAX_VALUE);
+            }
+        }
+
+        @Override
+        public void onNext(Object t) {
+            Subscription upstream = get();
+            if (upstream != SubscriptionHelper.CANCELLED) {
+                upstream.cancel();
+                lazySet(SubscriptionHelper.CANCELLED);
+                parent.onTimeout(idx);
+            }
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            if (get() != SubscriptionHelper.CANCELLED) {
+                lazySet(SubscriptionHelper.CANCELLED);
+                parent.onTimeoutError(idx, t);
+            } else {
+                RxJavaPlugins.onError(t);
+            }
+        }
+
+        @Override
+        public void onComplete() {
+            if (get() != SubscriptionHelper.CANCELLED) {
+                lazySet(SubscriptionHelper.CANCELLED);
+                parent.onTimeout(idx);
+            }
+        }
+
         @Override
         public void dispose() {
-            cancelled = true;
-            s.cancel();
-            DisposableHelper.dispose(timeout);
+            SubscriptionHelper.cancel(this);
         }
 
         @Override
         public boolean isDisposed() {
-            return cancelled;
-        }
-
-        @Override
-        public void timeout(long idx) {
-            if (idx == index) {
-                dispose();
-                other.subscribe(new FullArbiterSubscriber<T>(arbiter));
-            }
+            return SubscriptionHelper.isCancelled(this.get());
         }
     }
+
 }

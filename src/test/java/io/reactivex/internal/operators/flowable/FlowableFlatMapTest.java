@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,8 +13,8 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
@@ -25,8 +25,10 @@ import org.junit.*;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.TestException;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.TestSubscriber;
@@ -171,14 +173,14 @@ public class FlowableFlatMapTest {
     @Test
     public void testFlatMapTransformsNormal() {
         Flowable<Integer> onNext = Flowable.fromIterable(Arrays.asList(1, 2, 3));
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.fromIterable(Arrays.asList(10, 20, 30));
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(just(onNext), just(onError), just0(onCompleted)).subscribe(o);
+        source.flatMap(just(onNext), just(onError), just0(onComplete)).subscribe(o);
 
         verify(o, times(3)).onNext(1);
         verify(o, times(3)).onNext(2);
@@ -193,18 +195,18 @@ public class FlowableFlatMapTest {
     @Test
     public void testFlatMapTransformsException() {
         Flowable<Integer> onNext = Flowable.fromIterable(Arrays.asList(1, 2, 3));
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.concat(
                 Flowable.fromIterable(Arrays.asList(10, 20, 30)),
                 Flowable.<Integer> error(new RuntimeException("Forced failure!"))
                 );
-        
+
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(just(onNext), just(onError), just0(onCompleted)).subscribe(o);
+        source.flatMap(just(onNext), just(onError), just0(onComplete)).subscribe(o);
 
         verify(o, times(3)).onNext(1);
         verify(o, times(3)).onNext(2);
@@ -236,14 +238,14 @@ public class FlowableFlatMapTest {
 
     @Test
     public void testFlatMapTransformsOnNextFuncThrows() {
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.fromIterable(Arrays.asList(10, 20, 30));
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(funcThrow(1, onError), just(onError), just0(onCompleted)).subscribe(o);
+        source.flatMap(funcThrow(1, onError), just(onError), just0(onComplete)).subscribe(o);
 
         verify(o).onError(any(TestException.class));
         verify(o, never()).onNext(any());
@@ -253,16 +255,16 @@ public class FlowableFlatMapTest {
     @Test
     public void testFlatMapTransformsOnErrorFuncThrows() {
         Flowable<Integer> onNext = Flowable.fromIterable(Arrays.asList(1, 2, 3));
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.error(new TestException());
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(just(onNext), funcThrow((Throwable) null, onError), just0(onCompleted)).subscribe(o);
+        source.flatMap(just(onNext), funcThrow((Throwable) null, onError), just0(onComplete)).subscribe(o);
 
-        verify(o).onError(any(TestException.class));
+        verify(o).onError(any(CompositeException.class));
         verify(o, never()).onNext(any());
         verify(o, never()).onComplete();
     }
@@ -270,14 +272,14 @@ public class FlowableFlatMapTest {
     @Test
     public void testFlatMapTransformsOnCompletedFuncThrows() {
         Flowable<Integer> onNext = Flowable.fromIterable(Arrays.asList(1, 2, 3));
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.fromIterable(Arrays.<Integer> asList());
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(just(onNext), just(onError), funcThrow0(onCompleted)).subscribe(o);
+        source.flatMap(just(onNext), just(onError), funcThrow0(onComplete)).subscribe(o);
 
         verify(o).onError(any(TestException.class));
         verify(o, never()).onNext(any());
@@ -287,14 +289,14 @@ public class FlowableFlatMapTest {
     @Test
     public void testFlatMapTransformsMergeException() {
         Flowable<Integer> onNext = Flowable.error(new TestException());
-        Flowable<Integer> onCompleted = Flowable.fromIterable(Arrays.asList(4));
+        Flowable<Integer> onComplete = Flowable.fromIterable(Arrays.asList(4));
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.fromIterable(Arrays.asList(10, 20, 30));
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
 
-        source.flatMap(just(onNext), just(onError), funcThrow0(onCompleted)).subscribe(o);
+        source.flatMap(just(onNext), just(onError), funcThrow0(onComplete)).subscribe(o);
 
         verify(o).onError(any(TestException.class));
         verify(o, never()).onNext(any());
@@ -333,11 +335,11 @@ public class FlowableFlatMapTest {
                         .subscribeOn(Schedulers.computation());
             }
         }, m);
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-        
+
         source.subscribe(ts);
-        
+
         ts.awaitTerminalEvent();
         ts.assertNoErrors();
         Set<Integer> expected = new HashSet<Integer>(Arrays.asList(
@@ -363,22 +365,22 @@ public class FlowableFlatMapTest {
                 return t1 * 1000 + t2;
             }
         }, m);
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-        
+
         source.subscribe(ts);
-        
+
         ts.awaitTerminalEvent();
         ts.assertNoErrors();
         Set<Integer> expected = new HashSet<Integer>(Arrays.asList(
-                1010, 1011, 2020, 2021, 3030, 3031, 4040, 4041, 5050, 5051, 
+                1010, 1011, 2020, 2021, 3030, 3031, 4040, 4041, 5050, 5051,
                 6060, 6061, 7070, 7071, 8080, 8081, 9090, 9091, 10100, 10101
         ));
         Assert.assertEquals(expected.size(), ts.valueCount());
         System.out.println("--> testFlatMapSelectorMaxConcurrent: " + ts.values());
         Assert.assertTrue(expected.containsAll(ts.values()));
     }
-    
+
     @Test
     public void testFlatMapTransformsMaxConcurrentNormalLoop() {
         for (int i = 0; i < 1000; i++) {
@@ -388,23 +390,23 @@ public class FlowableFlatMapTest {
             testFlatMapTransformsMaxConcurrentNormal();
         }
     }
-    
+
     @Test
     public void testFlatMapTransformsMaxConcurrentNormal() {
         final int m = 2;
         final AtomicInteger subscriptionCount = new AtomicInteger();
-        Flowable<Integer> onNext = 
+        Flowable<Integer> onNext =
                 composer(
                         Flowable.fromIterable(Arrays.asList(1, 2, 3))
                         .observeOn(Schedulers.computation())
-                        , 
+                        ,
                 subscriptionCount, m)
                 .subscribeOn(Schedulers.computation())
                 ;
-        
-        Flowable<Integer> onCompleted = composer(Flowable.fromIterable(Arrays.asList(4)), subscriptionCount, m)
+
+        Flowable<Integer> onComplete = composer(Flowable.fromIterable(Arrays.asList(4)), subscriptionCount, m)
                 .subscribeOn(Schedulers.computation());
-        
+
         Flowable<Integer> onError = Flowable.fromIterable(Arrays.asList(5));
 
         Flowable<Integer> source = Flowable.fromIterable(Arrays.asList(10, 20, 30));
@@ -414,9 +416,9 @@ public class FlowableFlatMapTest {
 
         Function<Integer, Flowable<Integer>> just = just(onNext);
         Function<Throwable, Flowable<Integer>> just2 = just(onError);
-        Callable<Flowable<Integer>> just0 = just0(onCompleted);
+        Callable<Flowable<Integer>> just0 = just0(onComplete);
         source.flatMap(just, just2, just0, m).subscribe(ts);
-        
+
         ts.awaitTerminalEvent(1, TimeUnit.SECONDS);
         ts.assertNoErrors();
         ts.assertTerminated();
@@ -430,7 +432,7 @@ public class FlowableFlatMapTest {
         verify(o, never()).onNext(5);
         verify(o, never()).onError(any(Throwable.class));
     }
-    
+
     @Ignore("Don't care for any reordering")
     @Test(timeout = 10000)
     public void flatMapRangeAsyncLoop() {
@@ -509,19 +511,19 @@ public class FlowableFlatMapTest {
             assertEquals(1000, list.size());
         }
     }
-    
+
     @Test
     public void flatMapIntPassthruAsync() {
         for (int i = 0;i < 1000; i++) {
             TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-            
+
             Flowable.range(1, 1000).flatMap(new Function<Integer, Flowable<Integer>>() {
                 @Override
                 public Flowable<Integer> apply(Integer t) {
                     return Flowable.just(1).subscribeOn(Schedulers.computation());
                 }
             }).subscribe(ts);
-            
+
             ts.awaitTerminalEvent(5, TimeUnit.SECONDS);
             ts.assertNoErrors();
             ts.assertComplete();
@@ -532,25 +534,25 @@ public class FlowableFlatMapTest {
     public void flatMapTwoNestedSync() {
         for (final int n : new int[] { 1, 1000, 1000000 }) {
             TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-    
+
             Flowable.just(1, 2).flatMap(new Function<Integer, Flowable<Integer>>() {
                 @Override
                 public Flowable<Integer> apply(Integer t) {
                     return Flowable.range(1, n);
                 }
             }).subscribe(ts);
-            
+
             System.out.println("flatMapTwoNestedSync >> @ " + n);
             ts.assertNoErrors();
             ts.assertComplete();
             ts.assertValueCount(n * 2);
         }
     }
-    
+
     @Test
     public void justEmptyMixture() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
-        
+
         Flowable.range(0, 4 * Flowable.bufferSize())
         .flatMap(new Function<Integer, Flowable<Integer>>() {
             @Override
@@ -559,15 +561,15 @@ public class FlowableFlatMapTest {
             }
         })
         .subscribe(ts);
-        
+
         ts.assertValueCount(2 * Flowable.bufferSize());
         ts.assertNoErrors();
         ts.assertComplete();
-        
+
         int j = 1;
         for (Integer v : ts.values()) {
             Assert.assertEquals(j, v.intValue());
-            
+
             j += 2;
         }
     }
@@ -575,7 +577,7 @@ public class FlowableFlatMapTest {
     @Test
     public void rangeEmptyMixture() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
-        
+
         Flowable.range(0, 4 * Flowable.bufferSize())
         .flatMap(new Function<Integer, Flowable<Integer>>() {
             @Override
@@ -584,17 +586,17 @@ public class FlowableFlatMapTest {
             }
         })
         .subscribe(ts);
-        
+
         ts.assertValueCount(4 * Flowable.bufferSize());
         ts.assertNoErrors();
         ts.assertComplete();
-        
+
         int j = 1;
         List<Integer> list = ts.values();
         for (int i = 0; i < list.size(); i += 2) {
             Assert.assertEquals(j, list.get(i).intValue());
             Assert.assertEquals(j + 1, list.get(i + 1).intValue());
-            
+
             j += 2;
         }
     }
@@ -602,7 +604,7 @@ public class FlowableFlatMapTest {
     @Test
     public void justEmptyMixtureMaxConcurrent() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
-        
+
         Flowable.range(0, 4 * Flowable.bufferSize())
         .flatMap(new Function<Integer, Flowable<Integer>>() {
             @Override
@@ -611,15 +613,15 @@ public class FlowableFlatMapTest {
             }
         }, 16)
         .subscribe(ts);
-        
+
         ts.assertValueCount(2 * Flowable.bufferSize());
         ts.assertNoErrors();
         ts.assertComplete();
-        
+
         int j = 1;
         for (Integer v : ts.values()) {
             Assert.assertEquals(j, v.intValue());
-            
+
             j += 2;
         }
     }
@@ -627,7 +629,7 @@ public class FlowableFlatMapTest {
     @Test
     public void rangeEmptyMixtureMaxConcurrent() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
-        
+
         Flowable.range(0, 4 * Flowable.bufferSize())
         .flatMap(new Function<Integer, Flowable<Integer>>() {
             @Override
@@ -636,28 +638,28 @@ public class FlowableFlatMapTest {
             }
         }, 16)
         .subscribe(ts);
-        
+
         ts.assertValueCount(4 * Flowable.bufferSize());
         ts.assertNoErrors();
         ts.assertComplete();
-        
+
         int j = 1;
         List<Integer> list = ts.values();
         for (int i = 0; i < list.size(); i += 2) {
             Assert.assertEquals(j, list.get(i).intValue());
             Assert.assertEquals(j + 1, list.get(i + 1).intValue());
-            
+
             j += 2;
         }
     }
-    
+
     @Test
     public void castCrashUnsubscribes() {
-        
+
         PublishProcessor<Integer> ps = PublishProcessor.create();
-        
+
         TestSubscriber<Integer> ts = TestSubscriber.create();
-        
+
         ps.flatMap(new Function<Integer, Publisher<Integer>>() {
             @Override
             public Publisher<Integer> apply(Integer t) {
@@ -669,13 +671,409 @@ public class FlowableFlatMapTest {
                 return t1;
             }
         }).subscribe(ts);
-        
+
         Assert.assertTrue("Not subscribed?", ps.hasSubscribers());
-        
+
         ps.onNext(1);
-        
+
         Assert.assertFalse("Subscribed?", ps.hasSubscribers());
-        
+
         ts.assertError(TestException.class);
+    }
+
+    @Test
+    public void flatMapBiMapper() {
+        Flowable.just(1)
+        .flatMap(new Function<Integer, Publisher<Integer>>() {
+            @Override
+            public Publisher<Integer> apply(Integer v) throws Exception {
+                return Flowable.just(v * 10);
+            }
+        }, new BiFunction<Integer, Integer, Integer>() {
+            @Override
+            public Integer apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }, true)
+        .test()
+        .assertResult(11);
+    }
+
+    @Test
+    public void flatMapBiMapperWithError() {
+        Flowable.just(1)
+        .flatMap(new Function<Integer, Publisher<Integer>>() {
+            @Override
+            public Publisher<Integer> apply(Integer v) throws Exception {
+                return Flowable.just(v * 10).concatWith(Flowable.<Integer>error(new TestException()));
+            }
+        }, new BiFunction<Integer, Integer, Integer>() {
+            @Override
+            public Integer apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }, true)
+        .test()
+        .assertFailure(TestException.class, 11);
+    }
+
+    @Test
+    public void flatMapBiMapperMaxConcurrency() {
+        Flowable.just(1, 2)
+        .flatMap(new Function<Integer, Publisher<Integer>>() {
+            @Override
+            public Publisher<Integer> apply(Integer v) throws Exception {
+                return Flowable.just(v * 10);
+            }
+        }, new BiFunction<Integer, Integer, Integer>() {
+            @Override
+            public Integer apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }, true, 1)
+        .test()
+        .assertResult(11, 22);
+    }
+
+    @Test
+    public void flatMapEmpty() {
+        assertSame(Flowable.empty(), Flowable.empty().flatMap(new Function<Object, Publisher<Object>>() {
+            @Override
+            public Publisher<Object> apply(Object v) throws Exception {
+                return Flowable.just(v);
+            }
+        }));
+    }
+
+    @Test
+    public void mergeScalar() {
+        Flowable.merge(Flowable.just(Flowable.just(1)))
+        .test()
+        .assertResult(1);
+    }
+
+    @Test
+    public void mergeScalar2() {
+        Flowable.merge(Flowable.just(Flowable.just(1)).hide())
+        .test()
+        .assertResult(1);
+    }
+
+    @Test
+    public void mergeScalarEmpty() {
+        Flowable.merge(Flowable.just(Flowable.empty()).hide())
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void mergeScalarError() {
+        Flowable.merge(Flowable.just(Flowable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                throw new TestException();
+            }
+        })).hide())
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void scalarReentrant() {
+        final PublishProcessor<Flowable<Integer>> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = new TestSubscriber<Integer>() {
+            @Override
+            public void onNext(Integer t) {
+                super.onNext(t);
+                if (t == 1) {
+                    ps.onNext(Flowable.just(2));
+                }
+            }
+        };
+
+        Flowable.merge(ps)
+        .subscribe(to);
+
+        ps.onNext(Flowable.just(1));
+        ps.onComplete();
+
+        to.assertResult(1, 2);
+    }
+
+    @Test
+    public void scalarReentrant2() {
+        final PublishProcessor<Flowable<Integer>> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = new TestSubscriber<Integer>() {
+            @Override
+            public void onNext(Integer t) {
+                super.onNext(t);
+                if (t == 1) {
+                    ps.onNext(Flowable.just(2));
+                }
+            }
+        };
+
+        Flowable.merge(ps, 2)
+        .subscribe(to);
+
+        ps.onNext(Flowable.just(1));
+        ps.onComplete();
+
+        to.assertResult(1, 2);
+    }
+
+    @Test
+    public void innerCompleteCancelRace() {
+        for (int i = 0; i < 500; i++) {
+            final PublishProcessor<Integer> ps = PublishProcessor.create();
+
+            final TestSubscriber<Integer> to = Flowable.merge(Flowable.just(ps)).test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ps.onComplete();
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    to.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+        }
+    }
+
+
+    @Test
+    public void fusedInnerThrows() {
+        Flowable.just(1).hide()
+        .flatMap(new Function<Integer, Flowable<Object>>() {
+            @Override
+            public Flowable<Object> apply(Integer v) throws Exception {
+                return Flowable.range(1, 2).map(new Function<Integer, Object>() {
+                    @Override
+                    public Object apply(Integer w) throws Exception {
+                        throw new TestException();
+                    }
+                });
+            }
+        })
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void fusedInnerThrows2() {
+        TestSubscriber<Integer> to = Flowable.range(1, 2).hide()
+        .flatMap(new Function<Integer, Flowable<Integer>>() {
+            @Override
+            public Flowable<Integer> apply(Integer v) throws Exception {
+                return Flowable.range(1, 2).map(new Function<Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer w) throws Exception {
+                        throw new TestException();
+                    }
+                });
+            }
+        }, true)
+        .test()
+        .assertFailure(CompositeException.class);
+
+        List<Throwable> errors = TestHelper.errorList(to);
+
+        TestHelper.assertError(errors, 0, TestException.class);
+
+        TestHelper.assertError(errors, 1, TestException.class);
+    }
+
+    @Test
+    public void scalarXMap() {
+        Flowable.fromCallable(Functions.justCallable(1))
+        .flatMap(Functions.justFunction(Flowable.fromCallable(Functions.justCallable(2))))
+        .test()
+        .assertResult(2);
+    }
+
+    @Test
+    public void noCrossBoundaryFusion() {
+        for (int i = 0; i < 500; i++) {
+            TestSubscriber<Object> ts = Flowable.merge(
+                    Flowable.just(1).observeOn(Schedulers.single()).map(new Function<Integer, Object>() {
+                        @Override
+                        public Object apply(Integer v) throws Exception {
+                            return Thread.currentThread().getName().substring(0, 4);
+                        }
+                    }),
+                    Flowable.just(1).observeOn(Schedulers.computation()).map(new Function<Integer, Object>() {
+                        @Override
+                        public Object apply(Integer v) throws Exception {
+                            return Thread.currentThread().getName().substring(0, 4);
+                        }
+                    })
+            )
+            .test()
+            .awaitDone(5, TimeUnit.SECONDS)
+            .assertValueCount(2);
+
+            List<Object> list = ts.values();
+
+            assertTrue(list.toString(), list.contains("RxSi"));
+            assertTrue(list.toString(), list.contains("RxCo"));
+        }
+    }
+
+    @Test
+    public void cancelScalarDrainRace() {
+        for (int i = 0; i < 1000; i++) {
+            List<Throwable> errors = TestHelper.trackPluginErrors();
+            try {
+
+                final PublishProcessor<Flowable<Integer>> pp = PublishProcessor.create();
+
+                final TestSubscriber<Integer> ts = pp.flatMap(Functions.<Flowable<Integer>>identity()).test(0);
+
+                Runnable r1 = new Runnable() {
+                    @Override
+                    public void run() {
+                        ts.cancel();
+                    }
+                };
+                Runnable r2 = new Runnable() {
+                    @Override
+                    public void run() {
+                        pp.onComplete();
+                    }
+                };
+
+                TestHelper.race(r1, r2);
+
+                assertTrue(errors.toString(), errors.isEmpty());
+            } finally {
+                RxJavaPlugins.reset();
+            }
+        }
+    }
+
+    @Test
+    public void cancelDrainRace() {
+        for (int i = 0; i < 1000; i++) {
+            for (int j = 1; j < 50; j += 5) {
+                List<Throwable> errors = TestHelper.trackPluginErrors();
+                try {
+
+                    final PublishProcessor<Flowable<Integer>> pp = PublishProcessor.create();
+
+                    final TestSubscriber<Integer> ts = pp.flatMap(Functions.<Flowable<Integer>>identity()).test(0);
+
+                    final PublishProcessor<Integer> just = PublishProcessor.create();
+                    pp.onNext(just);
+
+                    Runnable r1 = new Runnable() {
+                        @Override
+                        public void run() {
+                            ts.request(1);
+                            ts.cancel();
+                        }
+                    };
+                    Runnable r2 = new Runnable() {
+                        @Override
+                        public void run() {
+                            just.onNext(1);
+                        }
+                    };
+
+                    TestHelper.race(r1, r2);
+
+                    assertTrue(errors.toString(), errors.isEmpty());
+                } finally {
+                    RxJavaPlugins.reset();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void iterableMapperFunctionReturnsNull() {
+        Flowable.just(1)
+        .flatMapIterable(new Function<Integer, Iterable<Object>>() {
+            @Override
+            public Iterable<Object> apply(Integer v) throws Exception {
+                return null;
+            }
+        }, new BiFunction<Integer, Object, Object>() {
+            @Override
+            public Object apply(Integer v, Object w) throws Exception {
+                return v;
+            }
+        })
+        .test()
+        .assertFailureAndMessage(NullPointerException.class, "The mapper returned a null Iterable");
+    }
+
+    @Test
+    public void combinerMapperFunctionReturnsNull() {
+        Flowable.just(1)
+        .flatMap(new Function<Integer, Publisher<Object>>() {
+            @Override
+            public Publisher<Object> apply(Integer v) throws Exception {
+                return null;
+            }
+        }, new BiFunction<Integer, Object, Object>() {
+            @Override
+            public Object apply(Integer v, Object w) throws Exception {
+                return v;
+            }
+        })
+        .test()
+        .assertFailureAndMessage(NullPointerException.class, "The mapper returned a null Publisher");
+    }
+
+    @Test
+    public void failingFusedInnerCancelsSource() {
+        final AtomicInteger counter = new AtomicInteger();
+        Flowable.range(1, 5)
+        .doOnNext(new Consumer<Integer>() {
+            @Override
+            public void accept(Integer v) throws Exception {
+                counter.getAndIncrement();
+            }
+        })
+        .flatMap(new Function<Integer, Publisher<Integer>>() {
+            @Override
+            public Publisher<Integer> apply(Integer v)
+                    throws Exception {
+                return Flowable.<Integer>fromIterable(new Iterable<Integer>() {
+                    @Override
+                    public Iterator<Integer> iterator() {
+                        return new Iterator<Integer>() {
+                            @Override
+                            public boolean hasNext() {
+                                return true;
+                            }
+
+                            @Override
+                            public Integer next() {
+                                throw new TestException();
+                            }
+
+                            @Override
+                            public void remove() {
+                                throw new UnsupportedOperationException();
+                            }
+                        };
+                    }
+                });
+            }
+        })
+        .test()
+        .assertFailure(TestException.class);
+
+        assertEquals(1, counter.get());
     }
 }

@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -23,7 +23,7 @@ import io.reactivex.observable.ObservableEventStream.Event;
 public class ObservableScanTests {
 
     @Test
-    public void testUnsubscribeScan() {
+    public void testUnsubscribeScan() throws Exception {
 
         ObservableEventStream.getEventStream("HTTP-ClusterB", 20)
         .scan(new HashMap<String, String>(), new BiFunction<HashMap<String, String>, Event, HashMap<String, String>>() {
@@ -40,5 +40,7 @@ public class ObservableScanTests {
                 System.out.println(pv);
             }
         });
+
+        Thread.sleep(200); // make sure the event streams receive their interrupt
     }
 }

@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,16 +15,23 @@
  */
 package io.reactivex.internal.operators.flowable;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+
+import java.util.List;
 
 import org.junit.*;
 import org.mockito.MockitoAnnotations;
 import org.reactivestreams.Subscriber;
 
 import io.reactivex.*;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
+import io.reactivex.subscribers.TestSubscriber;
 
 public class FlowableJoinTest {
     Subscriber<Object> observer = TestHelper.mockSubscriber();
@@ -299,5 +306,184 @@ public class FlowableJoinTest {
         verify(observer, times(1)).onError(any(Throwable.class));
         verify(observer, never()).onComplete();
         verify(observer, never()).onNext(any());
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishProcessor.<Integer>create().join(Flowable.just(1),
+                Functions.justFunction(Flowable.never()),
+                Functions.justFunction(Flowable.never()), new BiFunction<Integer, Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+                }));
+    }
+
+    @Test
+    public void take() {
+        Flowable.just(1).join(
+                Flowable.just(2),
+                Functions.justFunction(Flowable.never()),
+                Functions.justFunction(Flowable.never()),
+                new BiFunction<Integer, Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+                })
+        .take(1)
+        .test()
+        .assertResult(3);
+    }
+
+    @Test
+    public void rightClose() {
+        PublishProcessor<Integer> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = ps.join(Flowable.just(2),
+                Functions.justFunction(Flowable.never()),
+                Functions.justFunction(Flowable.empty()),
+                new BiFunction<Integer, Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+            })
+        .test()
+        .assertEmpty();
+
+        ps.onNext(1);
+
+        to.assertEmpty();
+    }
+
+    @Test
+    public void resultSelectorThrows2() {
+        PublishProcessor<Integer> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = ps.join(
+                Flowable.just(2),
+                Functions.justFunction(Flowable.never()),
+                Functions.justFunction(Flowable.never()),
+                new BiFunction<Integer, Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer a, Integer b) throws Exception {
+                        throw new TestException();
+                    }
+                })
+        .test();
+
+        ps.onNext(1);
+        ps.onComplete();
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void badOuterSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+                    observer.onError(new TestException("First"));
+                    observer.onError(new TestException("Second"));
+                }
+            }
+            .join(Flowable.just(2),
+                    Functions.justFunction(Flowable.never()),
+                    Functions.justFunction(Flowable.never()),
+                    new BiFunction<Integer, Integer, Integer>() {
+                        @Override
+                        public Integer apply(Integer a, Integer b) throws Exception {
+                            return a + b;
+                        }
+                })
+            .test()
+            .assertFailureAndMessage(TestException.class, "First");
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "Second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void badEndSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            @SuppressWarnings("rawtypes")
+            final Subscriber[] o = { null };
+
+            TestSubscriber<Integer> to = Flowable.just(1)
+            .join(Flowable.just(2),
+                    Functions.justFunction(Flowable.never()),
+                    Functions.justFunction(new Flowable<Integer>() {
+                        @Override
+                        protected void subscribeActual(Subscriber<? super Integer> observer) {
+                            o[0] = observer;
+                            observer.onSubscribe(new BooleanSubscription());
+                            observer.onError(new TestException("First"));
+                        }
+                    }),
+                    new BiFunction<Integer, Integer, Integer>() {
+                        @Override
+                        public Integer apply(Integer a, Integer b) throws Exception {
+                            return a + b;
+                        }
+                })
+            .test();
+
+            o[0].onError(new TestException("Second"));
+
+            to
+            .assertFailureAndMessage(TestException.class, "First");
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "Second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void backpressureOverflowRight() {
+        PublishProcessor<Integer> pp1 = PublishProcessor.create();
+        PublishProcessor<Integer> pp2 = PublishProcessor.create();
+
+        TestSubscriber<Object> ts = pp1.join(pp2, Functions.justFunction(Flowable.never()), Functions.justFunction(Flowable.never()),
+                new BiFunction<Integer, Integer, Object>() {
+                    @Override
+                    public Object apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+                })
+        .test(0L);
+
+        pp1.onNext(1);
+        pp2.onNext(2);
+
+        ts.assertFailure(MissingBackpressureException.class);
+    }
+
+    @Test
+    public void backpressureOverflowLeft() {
+        PublishProcessor<Integer> pp1 = PublishProcessor.create();
+        PublishProcessor<Integer> pp2 = PublishProcessor.create();
+
+        TestSubscriber<Object> ts = pp1.join(pp2, Functions.justFunction(Flowable.never()), Functions.justFunction(Flowable.never()),
+                new BiFunction<Integer, Integer, Object>() {
+                    @Override
+                    public Object apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+                })
+        .test(0L);
+
+        pp2.onNext(2);
+        pp1.onNext(1);
+
+        ts.assertFailure(MissingBackpressureException.class);
     }
 }

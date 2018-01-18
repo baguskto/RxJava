@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -15,12 +15,13 @@ package io.reactivex.internal.operators.flowable;
 
 import org.reactivestreams.*;
 
-import io.reactivex.internal.subscribers.flowable.EmptyComponent;
+import io.reactivex.*;
 import io.reactivex.internal.subscriptions.SubscriptionHelper;
+import io.reactivex.internal.util.EmptyComponent;
 
 public final class FlowableDetach<T> extends AbstractFlowableWithUpstream<T, T> {
 
-    public FlowableDetach(Publisher<T> source) {
+    public FlowableDetach(Flowable<T> source) {
         super(source);
     }
 
@@ -28,14 +29,14 @@ public final class FlowableDetach<T> extends AbstractFlowableWithUpstream<T, T> 
     protected void subscribeActual(Subscriber<? super T> s) {
         source.subscribe(new DetachSubscriber<T>(s));
     }
-    
-    static final class DetachSubscriber<T> implements Subscriber<T>, Subscription {
-        
+
+    static final class DetachSubscriber<T> implements FlowableSubscriber<T>, Subscription {
+
         Subscriber<? super T> actual;
-        
+
         Subscription s;
-        
-        public DetachSubscriber(Subscriber<? super T> actual) {
+
+        DetachSubscriber(Subscriber<? super T> actual) {
             this.actual = actual;
         }
 
@@ -56,7 +57,7 @@ public final class FlowableDetach<T> extends AbstractFlowableWithUpstream<T, T> 
         public void onSubscribe(Subscription s) {
             if (SubscriptionHelper.validate(this.s, s)) {
                 this.s = s;
-                
+
                 actual.onSubscribe(this);
             }
         }

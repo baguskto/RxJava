@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -22,7 +22,7 @@ import org.junit.Test;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
-import io.reactivex.functions.Consumer;
+import io.reactivex.functions.*;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.*;
@@ -47,15 +47,15 @@ public class FlowableMaterializeTest {
         }
 
         assertFalse(observer.onError);
-        assertTrue(observer.onCompleted);
+        assertTrue(observer.onComplete);
         assertEquals(3, observer.notifications.size());
 
         assertTrue(observer.notifications.get(0).isOnNext());
         assertEquals("one", observer.notifications.get(0).getValue());
-        
+
         assertTrue(observer.notifications.get(1).isOnNext());
         assertEquals("two", observer.notifications.get(1).getValue());
-        
+
         assertTrue(observer.notifications.get(2).isOnError());
         assertEquals(NullPointerException.class, observer.notifications.get(2).getError().getClass());
     }
@@ -75,14 +75,14 @@ public class FlowableMaterializeTest {
         }
 
         assertFalse(subscriber.onError);
-        assertTrue(subscriber.onCompleted);
+        assertTrue(subscriber.onComplete);
         assertEquals(4, subscriber.notifications.size());
         assertTrue(subscriber.notifications.get(0).isOnNext());
         assertEquals("one", subscriber.notifications.get(0).getValue());
 
         assertTrue(subscriber.notifications.get(1).isOnNext());
         assertEquals("two", subscriber.notifications.get(1).getValue());
-        
+
         assertTrue(subscriber.notifications.get(2).isOnNext());
         assertEquals("three", subscriber.notifications.get(2).getValue());
 
@@ -123,7 +123,7 @@ public class FlowableMaterializeTest {
         ts.assertValueCount(4);
         ts.assertComplete();
     }
-    
+
     @Test
     public void testBackpressureNoErrorAsync() throws InterruptedException {
         TestSubscriber<Notification<Integer>> ts = new TestSubscriber<Notification<Integer>>(0L);
@@ -186,7 +186,7 @@ public class FlowableMaterializeTest {
         ts.assertNoValues();
         ts.assertTerminated();
     }
-    
+
     @Test
     public void testUnsubscribeJustBeforeCompletionNotificationShouldPreventThatNotificationArriving() {
         TestSubscriber<Notification<Integer>> ts = new TestSubscriber<Notification<Integer>>(0L);
@@ -197,19 +197,17 @@ public class FlowableMaterializeTest {
         ts.dispose();
         ts.request(1);
         ts.assertNoValues();
-        // FIXME no longer assertable
-//        ts.assertUnsubscribed();
     }
 
     private static class TestNotificationSubscriber extends DefaultSubscriber<Notification<String>> {
 
-        boolean onCompleted = false;
-        boolean onError = false;
+        boolean onComplete;
+        boolean onError;
         List<Notification<String>> notifications = new Vector<Notification<String>>();
 
         @Override
         public void onComplete() {
-            this.onCompleted = true;
+            this.onComplete = true;
         }
 
         @Override
@@ -262,5 +260,54 @@ public class FlowableMaterializeTest {
             });
             t.start();
         }
+    }
+
+    @Test
+    public void backpressure() {
+        TestSubscriber<Notification<Integer>> ts = Flowable.range(1, 5).materialize().test(0);
+
+        ts.assertEmpty();
+
+        ts.request(5);
+
+        ts.assertValueCount(5)
+        .assertNoErrors()
+        .assertNotComplete();
+
+        ts.request(1);
+
+        ts.assertValueCount(6)
+        .assertNoErrors()
+        .assertComplete();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Flowable.just(1).materialize());
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Flowable<Notification<Object>>>() {
+            @Override
+            public Flowable<Notification<Object>> apply(Flowable<Object> o) throws Exception {
+                return o.materialize();
+            }
+        });
+    }
+
+    @Test
+    public void badSource() {
+        TestHelper.checkBadSourceFlowable(new Function<Flowable<Object>, Object>() {
+            @Override
+            public Object apply(Flowable<Object> f) throws Exception {
+                return f.materialize();
+            }
+        }, false, null, null, Notification.createOnComplete());
+    }
+
+    @Test
+    public void badRequest() {
+        TestHelper.assertBadRequestReported(Flowable.just(1).materialize());
     }
 }

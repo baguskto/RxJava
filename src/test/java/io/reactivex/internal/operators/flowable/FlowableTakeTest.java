@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.flowable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
@@ -159,15 +158,15 @@ public class FlowableTakeTest {
 
     @Test
     public void testUnsubscribeAfterTake() {
-        TestObservableFunc f = new TestObservableFunc("one", "two", "three");
+        TestFlowableFunc f = new TestFlowableFunc("one", "two", "three");
         Flowable<String> w = Flowable.unsafeCreate(f);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
-        
+
         Flowable<String> take = w.take(1);
         take.subscribe(observer);
 
-        // wait for the Observable to complete
+        // wait for the Flowable to complete
         try {
             f.t.join();
         } catch (Throwable e) {
@@ -175,7 +174,7 @@ public class FlowableTakeTest {
             fail(e.getMessage());
         }
 
-        System.out.println("TestObservable thread finished");
+        System.out.println("TestFlowable thread finished");
         verify(observer).onSubscribe((Subscription)notNull());
         verify(observer, times(1)).onNext("one");
         verify(observer, never()).onNext("two");
@@ -187,7 +186,7 @@ public class FlowableTakeTest {
     }
 
     @Test(timeout = 2000)
-    public void testUnsubscribeFromSynchronousInfiniteObservable() {
+    public void testUnsubscribeFromSynchronousInfiniteFlowable() {
         final AtomicLong count = new AtomicLong();
         INFINITE_OBSERVABLE.take(10).subscribe(new Consumer<Long>() {
 
@@ -229,27 +228,27 @@ public class FlowableTakeTest {
         assertEquals(1, count.get());
     }
 
-    private static class TestObservableFunc implements Publisher<String> {
+    static class TestFlowableFunc implements Publisher<String> {
 
         final String[] values;
-        Thread t = null;
+        Thread t;
 
-        public TestObservableFunc(String... values) {
+        TestFlowableFunc(String... values) {
             this.values = values;
         }
 
         @Override
         public void subscribe(final Subscriber<? super String> observer) {
             observer.onSubscribe(new BooleanSubscription());
-            System.out.println("TestObservable subscribed to ...");
+            System.out.println("TestFlowable subscribed to ...");
             t = new Thread(new Runnable() {
 
                 @Override
                 public void run() {
                     try {
-                        System.out.println("running TestObservable thread");
+                        System.out.println("running TestFlowable thread");
                         for (String s : values) {
-                            System.out.println("TestObservable onNext: " + s);
+                            System.out.println("TestFlowable onNext: " + s);
                             observer.onNext(s);
                         }
                         observer.onComplete();
@@ -259,9 +258,9 @@ public class FlowableTakeTest {
                 }
 
             });
-            System.out.println("starting TestObservable thread");
+            System.out.println("starting TestFlowable thread");
             t.start();
-            System.out.println("done starting TestObservable thread");
+            System.out.println("done starting TestFlowable thread");
         }
     }
 
@@ -279,23 +278,23 @@ public class FlowableTakeTest {
         }
 
     });
-    
+
     @Test(timeout = 2000)
     public void testTakeObserveOn() {
         Subscriber<Object> o = TestHelper.mockSubscriber();
         TestSubscriber<Object> ts = new TestSubscriber<Object>(o);
-        
+
         INFINITE_OBSERVABLE.onBackpressureDrop()
         .observeOn(Schedulers.newThread()).take(1).subscribe(ts);
         ts.awaitTerminalEvent();
         ts.assertNoErrors();
-        
+
         verify(o).onNext(1L);
         verify(o, never()).onNext(2L);
         verify(o).onComplete();
         verify(o, never()).onError(any(Throwable.class));
     }
-    
+
     @Test
     public void testProducerRequestThroughTake() {
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>(3);
@@ -313,7 +312,7 @@ public class FlowableTakeTest {
 
                     @Override
                     public void cancel() {
-                        
+
                     }
                 });
             }
@@ -321,7 +320,7 @@ public class FlowableTakeTest {
         }).take(3).subscribe(ts);
         assertEquals(Long.MAX_VALUE, requested.get());
     }
-    
+
     @Test
     public void testProducerRequestThroughTakeIsModified() {
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>(3);
@@ -339,7 +338,7 @@ public class FlowableTakeTest {
 
                     @Override
                     public void cancel() {
-                        
+
                     }
                 });
             }
@@ -348,7 +347,7 @@ public class FlowableTakeTest {
         //FIXME take triggers fast path if downstream requests more than the limit
         assertEquals(Long.MAX_VALUE, requested.get());
     }
-    
+
     @Test
     public void testInterrupt() throws InterruptedException {
         final AtomicReference<Object> exception = new AtomicReference<Object>();
@@ -373,7 +372,7 @@ public class FlowableTakeTest {
         latch.await();
         assertNull(exception.get());
     }
-    
+
     @Test
     public void testDoesntRequestMoreThanNeededFromUpstream() throws InterruptedException {
         final AtomicLong requests = new AtomicLong();
@@ -399,42 +398,77 @@ public class FlowableTakeTest {
         ts.assertNoErrors();
         assertEquals(3, requests.get());
     }
-    
+
     @Test
     public void takeFinalValueThrows() {
         Flowable<Integer> source = Flowable.just(1).take(1);
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>() {
             @Override
             public void onNext(Integer t) {
                 throw new TestException();
             }
         };
-        
+
         source.safeSubscribe(ts);
-        
+
         ts.assertNoValues();
         ts.assertError(TestException.class);
         ts.assertNotComplete();
     }
-    
+
     @Test
     public void testReentrantTake() {
         final PublishProcessor<Integer> source = PublishProcessor.create();
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-        
+
         source.take(1).doOnNext(new Consumer<Integer>() {
             @Override
             public void accept(Integer v) {
                 source.onNext(2);
             }
         }).subscribe(ts);
-        
+
         source.onNext(1);
-        
+
         ts.assertValue(1);
         ts.assertNoErrors();
         ts.assertComplete();
     }
+
+
+    @Test
+    public void takeNegative() {
+        try {
+            Flowable.just(1).take(-99);
+            fail("Should have thrown");
+        } catch (IllegalArgumentException ex) {
+            assertEquals("count >= 0 required but it was -99", ex.getMessage());
+        }
+    }
+
+    @Test
+    public void takeZero() {
+        Flowable.just(1)
+        .take(0)
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishProcessor.create().take(2));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Flowable<Object>>() {
+            @Override
+            public Flowable<Object> apply(Flowable<Object> o) throws Exception {
+                return o.take(2);
+            }
+        });
+    }
+
 }

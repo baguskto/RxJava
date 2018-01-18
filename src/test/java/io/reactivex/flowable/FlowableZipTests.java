@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -45,9 +45,11 @@ public class FlowableZipTests {
                                 @Override
                                 public HashMap<String, String> apply(HashMap<String, String> accum,
                                         Event perInstanceEvent) {
+                                    synchronized (accum) {
                                             accum.put("instance", ge.getKey());
-                                            return accum;
-                                        }
+                                    }
+                                    return accum;
+                                }
                             });
                     }
                 })
@@ -55,7 +57,9 @@ public class FlowableZipTests {
                 .blockingForEach(new Consumer<HashMap<String, String>>() {
                     @Override
                     public void accept(HashMap<String, String> v) {
-                        System.out.println(v);
+                        synchronized (v) {
+                            System.out.println(v);
+                        }
                     }
                 });
 
@@ -63,7 +67,7 @@ public class FlowableZipTests {
     }
 
     /**
-     * This won't compile if super/extends isn't done correctly on generics
+     * This won't compile if super/extends isn't done correctly on generics.
      */
     @Test
     public void testCovarianceOfZip() {
@@ -82,7 +86,7 @@ public class FlowableZipTests {
     /**
      * Occasionally zip may be invoked with 0 observables. Test that we don't block indefinitely instead
      * of immediately invoking zip with 0 argument.
-     * 
+     *
      * We now expect an NoSuchElementException since last() requires at least one value and nothing will be emitted.
      */
     @Test(expected = NoSuchElementException.class)
@@ -124,4 +128,31 @@ public class FlowableZipTests {
             System.out.println("Result: " + t1);
         }
     };
+
+
+    @Test
+    public void zipWithDelayError() {
+        Flowable.just(1)
+        .zipWith(Flowable.just(2), new BiFunction<Integer, Integer, Integer>() {
+            @Override
+            public Integer apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }, true)
+        .test()
+        .assertResult(3);
+    }
+
+    @Test
+    public void zipWithDelayErrorBufferSize() {
+        Flowable.just(1)
+        .zipWith(Flowable.just(2), new BiFunction<Integer, Integer, Integer>() {
+            @Override
+            public Integer apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }, true, 16)
+        .test()
+        .assertResult(3);
+    }
 }

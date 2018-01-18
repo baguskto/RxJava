@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -12,11 +12,12 @@
  */
 package io.reactivex.disposables;
 
-import io.reactivex.exceptions.Exceptions;
+import io.reactivex.annotations.NonNull;
 import io.reactivex.functions.Action;
+import io.reactivex.internal.util.ExceptionHelper;
 
 final class ActionDisposable extends ReferenceDisposable<Action> {
-    /** */
+
     private static final long serialVersionUID = -8219729196779211169L;
 
     ActionDisposable(Action value) {
@@ -24,12 +25,11 @@ final class ActionDisposable extends ReferenceDisposable<Action> {
     }
 
     @Override
-    protected void onDisposed(Action value) {
+    protected void onDisposed(@NonNull Action value) {
         try {
             value.run();
         } catch (Throwable ex) {
-            Exceptions.throwIfFatal(ex);
-            throw Exceptions.propagate(ex);
+            throw ExceptionHelper.wrapOrThrow(ex);
         }
     }
 }

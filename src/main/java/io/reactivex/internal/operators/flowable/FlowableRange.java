@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -16,6 +16,7 @@ package io.reactivex.internal.operators.flowable;
 import org.reactivestreams.Subscriber;
 
 import io.reactivex.Flowable;
+import io.reactivex.annotations.Nullable;
 import io.reactivex.internal.fuseable.ConditionalSubscriber;
 import io.reactivex.internal.subscriptions.*;
 import io.reactivex.internal.util.BackpressureHelper;
@@ -39,27 +40,27 @@ public final class FlowableRange extends Flowable<Integer> {
             s.onSubscribe(new RangeSubscription(s, start, end));
         }
     }
-    
-    static abstract class BaseRangeSubscription extends BasicQueueSubscription<Integer> {
-        /** */
+
+    abstract static class BaseRangeSubscription extends BasicQueueSubscription<Integer> {
         private static final long serialVersionUID = -2252972430506210021L;
 
         final int end;
-        
+
         int index;
-        
+
         volatile boolean cancelled;
-        
-        public BaseRangeSubscription(int index, int end) {
+
+        BaseRangeSubscription(int index, int end) {
             this.index = index;
             this.end = end;
         }
-        
+
         @Override
         public final int requestFusion(int mode) {
             return mode & SYNC;
         }
 
+        @Nullable
         @Override
         public final Integer poll() {
             int i = index;
@@ -92,27 +93,27 @@ public final class FlowableRange extends Flowable<Integer> {
                 }
             }
         }
-        
+
 
         @Override
         public final void cancel() {
             cancelled = true;
         }
 
-        
+
         abstract void fastPath();
-        
+
         abstract void slowPath(long r);
     }
-    
+
     static final class RangeSubscription extends BaseRangeSubscription {
 
-        /** */
+
         private static final long serialVersionUID = 2587302975077663557L;
 
         final Subscriber<? super Integer> actual;
-        
-        public RangeSubscription(Subscriber<? super Integer> actual, int index, int end) {
+
+        RangeSubscription(Subscriber<? super Integer> actual, int index, int end) {
             super(index, end);
             this.actual = actual;
         }
@@ -121,7 +122,7 @@ public final class FlowableRange extends Flowable<Integer> {
         void fastPath() {
             int f = end;
             Subscriber<? super Integer> a = actual;
-            
+
             for (int i = index; i != f; i++) {
                 if (cancelled) {
                     return;
@@ -133,34 +134,34 @@ public final class FlowableRange extends Flowable<Integer> {
             }
             a.onComplete();
         }
-        
+
         @Override
         void slowPath(long r) {
             long e = 0;
             int f = end;
             int i = index;
             Subscriber<? super Integer> a = actual;
-            
+
             for (;;) {
-                
+
                 while (e != r && i != f) {
                     if (cancelled) {
                         return;
                     }
-                    
+
                     a.onNext(i);
-                    
+
                     e++;
                     i++;
                 }
-                
+
                 if (i == f) {
                     if (!cancelled) {
                         a.onComplete();
                     }
                     return;
                 }
-                
+
                 r = get();
                 if (e == r) {
                     index = i;
@@ -173,15 +174,15 @@ public final class FlowableRange extends Flowable<Integer> {
             }
         }
     }
-    
+
     static final class RangeConditionalSubscription extends BaseRangeSubscription {
 
-        /** */
+
         private static final long serialVersionUID = 2587302975077663557L;
 
         final ConditionalSubscriber<? super Integer> actual;
-        
-        public RangeConditionalSubscription(ConditionalSubscriber<? super Integer> actual, int index, int end) {
+
+        RangeConditionalSubscription(ConditionalSubscriber<? super Integer> actual, int index, int end) {
             super(index, end);
             this.actual = actual;
         }
@@ -190,7 +191,7 @@ public final class FlowableRange extends Flowable<Integer> {
         void fastPath() {
             int f = end;
             ConditionalSubscriber<? super Integer> a = actual;
-            
+
             for (int i = index; i != f; i++) {
                 if (cancelled) {
                     return;
@@ -202,35 +203,35 @@ public final class FlowableRange extends Flowable<Integer> {
             }
             a.onComplete();
         }
-        
+
         @Override
         void slowPath(long r) {
             long e = 0;
             int f = end;
             int i = index;
             ConditionalSubscriber<? super Integer> a = actual;
-            
+
             for (;;) {
-                
+
                 while (e != r && i != f) {
                     if (cancelled) {
                         return;
                     }
-                    
+
                     if (a.tryOnNext(i)) {
                         e++;
                     }
-                    
+
                     i++;
                 }
-                
+
                 if (i == f) {
                     if (!cancelled) {
                         a.onComplete();
                     }
                     return;
                 }
-                
+
                 r = get();
                 if (e == r) {
                     index = i;

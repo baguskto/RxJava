@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -44,56 +44,72 @@ public class CompositeExceptionTest {
         Throwable e1 = new Throwable("1", rootCause);
         Throwable e2 = new Throwable("2", rootCause);
         Throwable e3 = new Throwable("3", rootCause);
-        CompositeException ce = new CompositeException(Arrays.asList(e1, e2, e3));
+        CompositeException ce = new CompositeException(e1, e2, e3);
 
         System.err.println("----------------------------- print composite stacktrace");
         ce.printStackTrace();
         assertEquals(3, ce.getExceptions().size());
-        
+
         assertNoCircularReferences(ce);
         assertNotNull(getRootCause(ce));
         System.err.println("----------------------------- print cause stacktrace");
         ce.getCause().printStackTrace();
     }
 
+    @Test
+    public void testEmptyErrors() {
+        try {
+            new CompositeException();
+            fail("CompositeException should fail if errors is empty");
+        } catch (IllegalArgumentException e) {
+            assertEquals("errors is empty", e.getMessage());
+        }
+        try {
+            new CompositeException(new ArrayList<Throwable>());
+            fail("CompositeException should fail if errors is empty");
+        } catch (IllegalArgumentException e) {
+            assertEquals("errors is empty", e.getMessage());
+        }
+    }
+
     @Test(timeout = 1000)
     public void testCompositeExceptionFromParentThenChild() {
-        CompositeException cex = new CompositeException(Arrays.asList(ex1, ex2));
-        
+        CompositeException cex = new CompositeException(ex1, ex2);
+
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
         assertEquals(2, cex.getExceptions().size());
-        
+
         assertNoCircularReferences(cex);
         assertNotNull(getRootCause(cex));
-        
+
         System.err.println("----------------------------- print cause stacktrace");
         cex.getCause().printStackTrace();
     }
 
     @Test(timeout = 1000)
     public void testCompositeExceptionFromChildThenParent() {
-        CompositeException cex = new CompositeException(Arrays.asList(ex2, ex1));
-        
+        CompositeException cex = new CompositeException(ex2, ex1);
+
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
         assertEquals(2, cex.getExceptions().size());
-        
+
         assertNoCircularReferences(cex);
         assertNotNull(getRootCause(cex));
-        
+
         System.err.println("----------------------------- print cause stacktrace");
         cex.getCause().printStackTrace();
     }
 
     @Test(timeout = 1000)
     public void testCompositeExceptionFromChildAndComposite() {
-        CompositeException cex = new CompositeException(Arrays.asList(ex1, getNewCompositeExceptionWithEx123()));
-        
+        CompositeException cex = new CompositeException(ex1, getNewCompositeExceptionWithEx123());
+
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
         assertEquals(3, cex.getExceptions().size());
-        
+
         assertNoCircularReferences(cex);
         assertNotNull(getRootCause(cex));
 
@@ -103,12 +119,12 @@ public class CompositeExceptionTest {
 
     @Test(timeout = 1000)
     public void testCompositeExceptionFromCompositeAndChild() {
-        CompositeException cex = new CompositeException(Arrays.asList(getNewCompositeExceptionWithEx123(), ex1));
-        
+        CompositeException cex = new CompositeException(getNewCompositeExceptionWithEx123(), ex1);
+
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
         assertEquals(3, cex.getExceptions().size());
-        
+
         assertNoCircularReferences(cex);
         assertNotNull(getRootCause(cex));
 
@@ -122,11 +138,11 @@ public class CompositeExceptionTest {
         exs.add(getNewCompositeExceptionWithEx123());
         exs.add(getNewCompositeExceptionWithEx123());
         CompositeException cex = new CompositeException(exs);
-        
+
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
         assertEquals(3, cex.getExceptions().size());
-        
+
         assertNoCircularReferences(cex);
         assertNotNull(getRootCause(cex));
 
@@ -150,7 +166,7 @@ public class CompositeExceptionTest {
         if (root == null) {
             return null;
         } else {
-            while(true) {
+            while (true) {
                 if (root.getCause() == null) {
                     return root;
                 } else {
@@ -159,7 +175,7 @@ public class CompositeExceptionTest {
             }
         }
     }
-    
+
     @Test
     public void testNullCollection() {
         CompositeException composite = new CompositeException((List<Throwable>)null);
@@ -176,7 +192,7 @@ public class CompositeExceptionTest {
     @Test(timeout = 1000)
     public void testCompositeExceptionWithUnsupportedInitCause() {
         Throwable t = new Throwable() {
-            /** */
+
             private static final long serialVersionUID = -3282577447436848385L;
 
             @Override
@@ -184,7 +200,7 @@ public class CompositeExceptionTest {
                 throw new UnsupportedOperationException();
             }
         };
-        CompositeException cex = new CompositeException(Arrays.asList(t, ex1));
+        CompositeException cex = new CompositeException(t, ex1);
 
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
@@ -200,7 +216,7 @@ public class CompositeExceptionTest {
     @Test(timeout = 1000)
     public void testCompositeExceptionWithNullInitCause() {
         Throwable t = new Throwable("ThrowableWithNullInitCause") {
-            /** */
+
             private static final long serialVersionUID = -7984762607894527888L;
 
             @Override
@@ -208,7 +224,7 @@ public class CompositeExceptionTest {
                 return null;
             }
         };
-        CompositeException cex = new CompositeException(Arrays.asList(t, ex1));
+        CompositeException cex = new CompositeException(t, ex1);
 
         System.err.println("----------------------------- print composite stacktrace");
         cex.printStackTrace();
@@ -223,7 +239,7 @@ public class CompositeExceptionTest {
 
     @Test
     public void messageCollection() {
-        CompositeException compositeException = new CompositeException(Arrays.asList(ex1, ex3));
+        CompositeException compositeException = new CompositeException(ex1, ex3);
         assertEquals("2 exceptions occurred. ", compositeException.getMessage());
     }
 
@@ -248,7 +264,7 @@ public class CompositeExceptionTest {
         e5.initCause(e6);
 
         CompositeException compositeException = new CompositeException(e1, e3, e5);
-        assert(compositeException.getCause() instanceof CompositeExceptionCausalChain);
+        assertTrue(compositeException.getCause() instanceof CompositeExceptionCausalChain);
 
         List<Throwable> causeChain = new ArrayList<Throwable>();
         Throwable cause = compositeException.getCause().getCause();
@@ -266,5 +282,80 @@ public class CompositeExceptionTest {
         //
         // e1 -> e2 -> e3 -> e4 -> e5 -> e6
         assertEquals(Arrays.asList(e1, e2, e3, e4, e5, e6), causeChain);
+    }
+
+    @Test
+    public void constructorWithNull() {
+        assertTrue(new CompositeException((Throwable[])null).getExceptions().get(0) instanceof NullPointerException);
+
+        assertTrue(new CompositeException((Iterable<Throwable>)null).getExceptions().get(0) instanceof NullPointerException);
+
+        assertTrue(new CompositeException(null, new TestException()).getExceptions().get(0) instanceof NullPointerException);
+    }
+
+    @Test
+    public void printStackTrace() {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+
+        new CompositeException(new TestException()).printStackTrace(pw);
+
+        assertTrue(sw.toString().contains("TestException"));
+    }
+
+    @Test
+    public void cyclicRootCause() {
+        RuntimeException te = new RuntimeException() {
+
+            private static final long serialVersionUID = -8492568224555229753L;
+            Throwable cause;
+
+            @Override
+            public Throwable initCause(Throwable c) {
+                return this;
+            }
+
+            @Override
+            public Throwable getCause() {
+                return cause;
+            }
+        };
+
+        assertSame(te, new CompositeException(te).getCause().getCause());
+
+        assertSame(te, new CompositeException(new RuntimeException(te)).getCause().getCause().getCause());
+    }
+
+    @Test
+    public void nullRootCause() {
+        RuntimeException te = new RuntimeException() {
+
+            private static final long serialVersionUID = -8492568224555229753L;
+
+            @Override
+            public Throwable getCause() {
+                return null;
+            }
+        };
+
+        assertSame(te, new CompositeException(te).getCause().getCause());
+
+        assertSame(te, new CompositeException(new RuntimeException(te)).getCause().getCause().getCause());
+    }
+
+    @Test
+    public void badException() {
+        Throwable e = new BadException();
+        assertSame(e, new CompositeException(e).getCause().getCause());
+        assertSame(e, new CompositeException(new RuntimeException(e)).getCause().getCause().getCause());
+    }
+}
+
+final class BadException extends Throwable {
+    private static final long serialVersionUID = 8999507293896399171L;
+
+    @Override
+    public synchronized Throwable getCause() {
+        return this;
     }
 }

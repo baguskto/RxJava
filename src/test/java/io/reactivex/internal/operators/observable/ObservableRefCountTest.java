@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,9 +14,10 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -29,6 +30,8 @@ import io.reactivex.Observable;
 import io.reactivex.Observer;
 import io.reactivex.disposables.*;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.observables.ConnectableObservable;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.schedulers.*;
 import io.reactivex.subjects.ReplaySubject;
@@ -39,7 +42,7 @@ public class ObservableRefCountTest {
     public void testRefCountAsync() {
         final AtomicInteger subscribeCount = new AtomicInteger();
         final AtomicInteger nextCount = new AtomicInteger();
-        Observable<Long> r = Observable.interval(0, 5, TimeUnit.MILLISECONDS)
+        Observable<Long> r = Observable.interval(0, 25, TimeUnit.MILLISECONDS)
                 .doOnSubscribe(new Consumer<Disposable>() {
                     @Override
                     public void accept(Disposable s) {
@@ -61,17 +64,17 @@ public class ObservableRefCountTest {
                 receivedCount.incrementAndGet();
             }
         });
-        
+
         Disposable s2 = r.subscribe();
 
         // give time to emit
         try {
-            Thread.sleep(52);
+            Thread.sleep(260);
         } catch (InterruptedException e) {
         }
 
         // now unsubscribe
-        s2.dispose(); // unsubscribe s2 first as we're counting in 1 and there can be a race between unsubscribe and one NbpSubscriber getting a value but not the other
+        s2.dispose(); // unsubscribe s2 first as we're counting in 1 and there can be a race between unsubscribe and one Observer getting a value but not the other
         s1.dispose();
 
         System.out.println("onNext: " + nextCount.get());
@@ -118,7 +121,7 @@ public class ObservableRefCountTest {
         }
 
         // now unsubscribe
-        s2.dispose(); // unsubscribe s2 first as we're counting in 1 and there can be a race between unsubscribe and one NbpSubscriber getting a value but not the other
+        s2.dispose(); // unsubscribe s2 first as we're counting in 1 and there can be a race between unsubscribe and one Observer getting a value but not the other
         s1.dispose();
 
         System.out.println("onNext Count: " + nextCount.get());
@@ -170,7 +173,7 @@ public class ObservableRefCountTest {
                             subscribeCount.incrementAndGet();
                     }
                 })
-                .doOnCancel(new Action() {
+                .doOnDispose(new Action() {
                     @Override
                     public void run() {
                             System.out.println("******************************* Unsubscribe received");
@@ -205,7 +208,7 @@ public class ObservableRefCountTest {
     public void testConnectUnsubscribe() throws InterruptedException {
         final CountDownLatch unsubscribeLatch = new CountDownLatch(1);
         final CountDownLatch subscribeLatch = new CountDownLatch(1);
-        
+
         Observable<Long> o = synchronousInterval()
                 .doOnSubscribe(new Consumer<Disposable>() {
                     @Override
@@ -215,7 +218,7 @@ public class ObservableRefCountTest {
                             subscribeLatch.countDown();
                     }
                 })
-                .doOnCancel(new Action() {
+                .doOnDispose(new Action() {
                     @Override
                     public void run() {
                             System.out.println("******************************* Unsubscribe received");
@@ -223,7 +226,7 @@ public class ObservableRefCountTest {
                             unsubscribeLatch.countDown();
                     }
                 });
-        
+
         TestObserver<Long> s = new TestObserver<Long>();
         o.publish().refCount().subscribeOn(Schedulers.newThread()).subscribe(s);
         System.out.println("send unsubscribe");
@@ -248,12 +251,12 @@ public class ObservableRefCountTest {
             testConnectUnsubscribeRaceCondition();
         }
     }
-    
+
     @Test
     public void testConnectUnsubscribeRaceCondition() throws InterruptedException {
         final AtomicInteger subUnsubCount = new AtomicInteger();
         Observable<Long> o = synchronousInterval()
-                .doOnCancel(new Action() {
+                .doOnDispose(new Action() {
                     @Override
                     public void run() {
                             System.out.println("******************************* Unsubscribe received");
@@ -270,12 +273,12 @@ public class ObservableRefCountTest {
                 });
 
         TestObserver<Long> s = new TestObserver<Long>();
-        
+
         o.publish().refCount().subscribeOn(Schedulers.computation()).subscribe(s);
         System.out.println("send unsubscribe");
         // now immediately unsubscribe while subscribeOn is racing to subscribe
         s.dispose();
-        
+
         // this generally will mean it won't even subscribe as it is already unsubscribed by the time connect() gets scheduled
         // give time to the counter to update
         Thread.sleep(10);
@@ -299,9 +302,9 @@ public class ObservableRefCountTest {
     private Observable<Long> synchronousInterval() {
         return Observable.unsafeCreate(new ObservableSource<Long>() {
             @Override
-            public void subscribe(Observer<? super Long> NbpSubscriber) {
+            public void subscribe(Observer<? super Long> observer) {
                 final AtomicBoolean cancel = new AtomicBoolean();
-                NbpSubscriber.onSubscribe(Disposables.from(new Runnable() {
+                observer.onSubscribe(Disposables.fromRunnable(new Runnable() {
                     @Override
                     public void run() {
                         cancel.set(true);
@@ -315,7 +318,7 @@ public class ObservableRefCountTest {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
                     }
-                    NbpSubscriber.onNext(1L);
+                    observer.onNext(1L);
                 }
             }
         });
@@ -327,9 +330,9 @@ public class ObservableRefCountTest {
         final AtomicInteger unsubscriptionCount = new AtomicInteger();
         Observable<Integer> o = Observable.unsafeCreate(new ObservableSource<Integer>() {
             @Override
-            public void subscribe(Observer<? super Integer> NbpObserver) {
+            public void subscribe(Observer<? super Integer> observer) {
                 subscriptionCount.incrementAndGet();
-                NbpObserver.onSubscribe(Disposables.from(new Runnable() {
+                observer.onSubscribe(Disposables.fromRunnable(new Runnable() {
                     @Override
                     public void run() {
                             unsubscriptionCount.incrementAndGet();
@@ -341,13 +344,13 @@ public class ObservableRefCountTest {
 
         Disposable first = refCounted.subscribe();
         assertEquals(1, subscriptionCount.get());
-        
+
         Disposable second = refCounted.subscribe();
         assertEquals(1, subscriptionCount.get());
-        
+
         first.dispose();
         assertEquals(0, unsubscriptionCount.get());
-        
+
         second.dispose();
         assertEquals(1, unsubscriptionCount.get());
     }
@@ -540,14 +543,14 @@ public class ObservableRefCountTest {
                 .doOnError(new Consumer<Throwable>() {
                     @Override
                     public void accept(Throwable t1) {
-                            System.out.println("NbpSubscriber 1 onError: " + t1);
+                            System.out.println("Observer 1 onError: " + t1);
                     }
                 })
                 .retry(5)
                 .subscribe(new Consumer<String>() {
                     @Override
                     public void accept(String t1) {
-                            System.out.println("NbpSubscriber 1: " + t1);
+                            System.out.println("Observer 1: " + t1);
                     }
                 });
         Thread.sleep(100);
@@ -555,19 +558,19 @@ public class ObservableRefCountTest {
         .doOnError(new Consumer<Throwable>() {
             @Override
             public void accept(Throwable t1) {
-                    System.out.println("NbpSubscriber 2 onError: " + t1);
+                    System.out.println("Observer 2 onError: " + t1);
             }
         })
         .retry(5)
                 .subscribe(new Consumer<String>() {
                     @Override
                     public void accept(String t1) {
-                            System.out.println("NbpSubscriber 2: " + t1);
+                            System.out.println("Observer 2: " + t1);
                     }
                 });
-        
+
         Thread.sleep(1300);
-        
+
         System.out.println(intervalSubscribed.get());
         assertEquals(6, intervalSubscribed.get());
     }
@@ -591,5 +594,180 @@ public class ObservableRefCountTest {
         @Override
         public void onComplete() {
         }
+    }
+
+    @Test
+    public void disposed() {
+        TestHelper.checkDisposed(Observable.just(1).publish().refCount());
+    }
+
+    @Test
+    public void noOpConnect() {
+        final int[] calls = { 0 };
+        Observable<Integer> o = new ConnectableObservable<Integer>() {
+            @Override
+            public void connect(Consumer<? super Disposable> connection) {
+                calls[0]++;
+            }
+
+            @Override
+            protected void subscribeActual(Observer<? super Integer> observer) {
+                observer.onSubscribe(Disposables.disposed());
+            }
+        }.refCount();
+
+        o.test();
+        o.test();
+
+        assertEquals(1, calls[0]);
+    }
+    Observable<Object> source;
+
+    @Test
+    public void replayNoLeak() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Observable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        })
+        .replay(1)
+        .refCount();
+
+        source.subscribe();
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void replayNoLeak2() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Observable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        }).concatWith(Observable.never())
+        .replay(1)
+        .refCount();
+
+        Disposable s1 = source.subscribe();
+        Disposable s2 = source.subscribe();
+
+        s1.dispose();
+        s2.dispose();
+
+        s1 = null;
+        s2 = null;
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    static final class ExceptionData extends Exception {
+        private static final long serialVersionUID = -6763898015338136119L;
+
+        public final Object data;
+
+        ExceptionData(Object data) {
+            this.data = data;
+        }
+    }
+
+    @Test
+    public void publishNoLeak() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Observable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                throw new ExceptionData(new byte[100 * 1000 * 1000]);
+            }
+        })
+        .publish()
+        .refCount();
+
+        source.subscribe(Functions.emptyConsumer(), Functions.emptyConsumer());
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void publishNoLeak2() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Observable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        }).concatWith(Observable.never())
+        .publish()
+        .refCount();
+
+        Disposable s1 = source.test();
+        Disposable s2 = source.test();
+
+        s1.dispose();
+        s2.dispose();
+
+        s1 = null;
+        s2 = null;
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void replayIsUnsubscribed() {
+        ConnectableObservable<Integer> co = Observable.just(1).concatWith(Observable.<Integer>never())
+        .replay();
+
+        assertTrue(((Disposable)co).isDisposed());
+
+        Disposable s = co.connect();
+
+        assertFalse(((Disposable)co).isDisposed());
+
+        s.dispose();
+
+        assertTrue(((Disposable)co).isDisposed());
     }
 }

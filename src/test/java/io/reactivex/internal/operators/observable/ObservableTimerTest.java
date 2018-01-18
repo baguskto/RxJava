@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,53 +13,57 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.mockito.Matchers.*;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.*;
 
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.*;
 import org.mockito.*;
 
 import io.reactivex.*;
 import io.reactivex.exceptions.TestException;
+import io.reactivex.functions.Function;
 import io.reactivex.observables.ConnectableObservable;
 import io.reactivex.observers.*;
-import io.reactivex.schedulers.TestScheduler;
+import io.reactivex.plugins.RxJavaPlugins;
+import io.reactivex.schedulers.*;
 
 public class ObservableTimerTest {
     @Mock
-    Observer<Object> NbpObserver;
+    Observer<Object> observer;
     @Mock
     Observer<Long> observer2;
-    
+
     TestScheduler scheduler;
 
     @Before
     public void before() {
-        NbpObserver = TestHelper.mockObserver();
-        
+        observer = TestHelper.mockObserver();
+
         observer2 = TestHelper.mockObserver();
-        
+
         scheduler = new TestScheduler();
     }
 
     @Test
     public void testTimerOnce() {
-        Observable.timer(100, TimeUnit.MILLISECONDS, scheduler).subscribe(NbpObserver);
+        Observable.timer(100, TimeUnit.MILLISECONDS, scheduler).subscribe(observer);
         scheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS);
 
-        verify(NbpObserver, times(1)).onNext(0L);
-        verify(NbpObserver, times(1)).onComplete();
-        verify(NbpObserver, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onNext(0L);
+        verify(observer, times(1)).onComplete();
+        verify(observer, never()).onError(any(Throwable.class));
     }
 
     @Test
     public void testTimerPeriodically() {
         TestObserver<Long> ts = new TestObserver<Long>();
-        
+
         Observable.interval(100, 100, TimeUnit.MILLISECONDS, scheduler).subscribe(ts);
-        
+
         scheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS);
 
         ts.assertValue(0L);
@@ -97,7 +101,7 @@ public class ObservableTimerTest {
         ts.assertNotComplete();
 
         ts.dispose();
-        
+
         scheduler.advanceTimeTo(4, TimeUnit.SECONDS);
         ts.assertValues(0L, 1L);
         ts.assertNoErrors();
@@ -107,10 +111,10 @@ public class ObservableTimerTest {
     @Test
     public void testWithMultipleSubscribersStartingAtSameTime() {
         Observable<Long> w = Observable.interval(1, TimeUnit.SECONDS, scheduler);
-        
+
         TestObserver<Long> ts1 = new TestObserver<Long>();
         TestObserver<Long> ts2 = new TestObserver<Long>();
-        
+
         w.subscribe(ts1);
         w.subscribe(ts2);
 
@@ -129,7 +133,7 @@ public class ObservableTimerTest {
 
         ts1.dispose();
         ts2.dispose();
-        
+
         scheduler.advanceTimeTo(4, TimeUnit.SECONDS);
 
         ts1.assertValues(0L, 1L);
@@ -144,23 +148,23 @@ public class ObservableTimerTest {
     @Test
     public void testWithMultipleStaggeredSubscribers() {
         Observable<Long> w = Observable.interval(1, TimeUnit.SECONDS, scheduler);
-        
+
         TestObserver<Long> ts1 = new TestObserver<Long>();
-        
+
         w.subscribe(ts1);
 
         ts1.assertNoErrors();
-        
+
         scheduler.advanceTimeTo(2, TimeUnit.SECONDS);
-        
+
         TestObserver<Long> ts2 = new TestObserver<Long>();
-        
+
         w.subscribe(ts2);
 
         ts1.assertValues(0L, 1L);
         ts1.assertNoErrors();
         ts1.assertNotComplete();
-        
+
         ts2.assertNoValues();
 
         scheduler.advanceTimeTo(4, TimeUnit.SECONDS);
@@ -184,16 +188,16 @@ public class ObservableTimerTest {
     @Test
     public void testWithMultipleStaggeredSubscribersAndPublish() {
         ConnectableObservable<Long> w = Observable.interval(1, TimeUnit.SECONDS, scheduler).publish();
-        
+
         TestObserver<Long> ts1 = new TestObserver<Long>();
-        
+
         w.subscribe(ts1);
         w.connect();
-        
+
         ts1.assertNoValues();
 
         scheduler.advanceTimeTo(2, TimeUnit.SECONDS);
-        
+
         TestObserver<Long> ts2 = new TestObserver<Long>();
         w.subscribe(ts2);
 
@@ -215,7 +219,7 @@ public class ObservableTimerTest {
         ts1.assertValues(0L, 1L, 2L, 3L);
         ts1.assertNoErrors();
         ts1.assertNotComplete();
-        
+
         ts2.assertValues(2L, 3L);
         ts2.assertNoErrors();
         ts2.assertNotComplete();
@@ -223,7 +227,7 @@ public class ObservableTimerTest {
     @Test
     public void testOnceObserverThrows() {
         Observable<Long> source = Observable.timer(100, TimeUnit.MILLISECONDS, scheduler);
-        
+
         source.safeSubscribe(new DefaultObserver<Long>() {
 
             @Override
@@ -233,27 +237,27 @@ public class ObservableTimerTest {
 
             @Override
             public void onError(Throwable e) {
-                NbpObserver.onError(e);
+                observer.onError(e);
             }
 
             @Override
             public void onComplete() {
-                NbpObserver.onComplete();
+                observer.onComplete();
             }
         });
-        
+
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-        
-        verify(NbpObserver).onError(any(TestException.class));
-        verify(NbpObserver, never()).onNext(anyLong());
-        verify(NbpObserver, never()).onComplete();
+
+        verify(observer).onError(any(TestException.class));
+        verify(observer, never()).onNext(anyLong());
+        verify(observer, never()).onComplete();
     }
     @Test
     public void testPeriodicObserverThrows() {
         Observable<Long> source = Observable.interval(100, 100, TimeUnit.MILLISECONDS, scheduler);
-        
-        InOrder inOrder = inOrder(NbpObserver);
-        
+
+        InOrder inOrder = inOrder(observer);
+
         source.safeSubscribe(new DefaultObserver<Long>() {
 
             @Override
@@ -261,25 +265,78 @@ public class ObservableTimerTest {
                 if (t > 0) {
                     throw new TestException();
                 }
-                NbpObserver.onNext(t);
+                observer.onNext(t);
             }
 
             @Override
             public void onError(Throwable e) {
-                NbpObserver.onError(e);
+                observer.onError(e);
             }
 
             @Override
             public void onComplete() {
-                NbpObserver.onComplete();
+                observer.onComplete();
             }
         });
-        
+
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-        
-        inOrder.verify(NbpObserver).onNext(0L);
-        inOrder.verify(NbpObserver).onError(any(TestException.class));
+
+        inOrder.verify(observer).onNext(0L);
+        inOrder.verify(observer).onError(any(TestException.class));
         inOrder.verifyNoMoreInteractions();
-        verify(NbpObserver, never()).onComplete();
+        verify(observer, never()).onComplete();
     }
+
+    @Test
+    public void disposed() {
+        TestHelper.checkDisposed(Observable.timer(1, TimeUnit.DAYS));
+    }
+
+    @Test
+    public void timerDelayZero() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            for (int i = 0; i < 1000; i++) {
+                Observable.timer(0, TimeUnit.MILLISECONDS).blockingFirst();
+            }
+
+            assertTrue(errors.toString(), errors.isEmpty());
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void timerInterruptible() throws Exception {
+        ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
+        try {
+            for (Scheduler s : new Scheduler[] { Schedulers.single(), Schedulers.computation(), Schedulers.newThread(), Schedulers.io(), Schedulers.from(exec) }) {
+                final AtomicBoolean interrupted = new AtomicBoolean();
+                TestObserver<Long> ts = Observable.timer(1, TimeUnit.MILLISECONDS, s)
+                .map(new Function<Long, Long>() {
+                    @Override
+                    public Long apply(Long v) throws Exception {
+                        try {
+                        Thread.sleep(3000);
+                        } catch (InterruptedException ex) {
+                            interrupted.set(true);
+                        }
+                        return v;
+                    }
+                })
+                .test();
+
+                Thread.sleep(500);
+
+                ts.cancel();
+
+                Thread.sleep(500);
+
+                assertTrue(s.getClass().getSimpleName(), interrupted.get());
+            }
+        } finally {
+            exec.shutdown();
+        }
+    }
+
 }

@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.flowable;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
@@ -25,6 +24,8 @@ import org.mockito.InOrder;
 import org.reactivestreams.Subscriber;
 
 import io.reactivex.*;
+import io.reactivex.Flowable;
+import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.*;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.*;
@@ -125,7 +126,7 @@ public class FlowableTakeLastTest {
 
     private Function<Integer, Integer> newSlowProcessor() {
         return new Function<Integer, Integer>() {
-            int c = 0;
+            int c;
 
             @Override
             public Integer apply(Integer i) {
@@ -147,6 +148,7 @@ public class FlowableTakeLastTest {
         assertEquals(0, Flowable
                 .empty()
                 .count()
+                .toFlowable()
                 .filter(new Predicate<Long>() {
                     @Override
                     public boolean test(Long v) {
@@ -154,7 +156,7 @@ public class FlowableTakeLastTest {
                     }
                 })
                 .toList()
-                .blockingSingle().size());
+                .blockingGet().size());
     }
 
     @Test
@@ -260,7 +262,7 @@ public class FlowableTakeLastTest {
             }
         });
     }
-    
+
     @Test
     public void testUnsubscribeTakesEffectEarlyOnFastPath() {
         final AtomicInteger count = new AtomicInteger();
@@ -288,8 +290,8 @@ public class FlowableTakeLastTest {
         });
         assertEquals(1,count.get());
     }
-    
-    @Test(timeout=10000)
+
+    @Test(timeout = 10000)
     public void testRequestOverflow() {
         final List<Integer> list = new ArrayList<Integer>();
         Flowable.range(1, 100).takeLast(50).subscribe(new DefaultSubscriber<Integer>() {
@@ -298,22 +300,54 @@ public class FlowableTakeLastTest {
             public void onStart() {
                 request(2);
             }
-            
+
             @Override
             public void onComplete() {
-                
+
             }
 
             @Override
             public void onError(Throwable e) {
-                
+
             }
 
             @Override
             public void onNext(Integer t) {
                 list.add(t);
-                request(Long.MAX_VALUE-1);
+                request(Long.MAX_VALUE - 1);
             }});
         assertEquals(50, list.size());
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Flowable.range(1, 10).takeLast(5));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Flowable<Object>>() {
+            @Override
+            public Flowable<Object> apply(Flowable<Object> o) throws Exception {
+                return o.takeLast(5);
+            }
+        });
+    }
+
+    @Test
+    public void error() {
+        Flowable.error(new TestException())
+        .takeLast(5)
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void takeLastTake() {
+        Flowable.range(1, 10)
+        .takeLast(5)
+        .take(2)
+        .test()
+        .assertResult(6, 7);
     }
 }

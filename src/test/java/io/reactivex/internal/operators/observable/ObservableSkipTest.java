@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
@@ -31,13 +30,13 @@ public class ObservableSkipTest {
 
         Observable<String> skip = Observable.just("one", "two", "three").skip(-99);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, times(1)).onNext("two");
-        verify(NbpObserver, times(1)).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
+        verify(observer, times(1)).onNext("one");
+        verify(observer, times(1)).onNext("two");
+        verify(observer, times(1)).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -45,13 +44,13 @@ public class ObservableSkipTest {
 
         Observable<String> skip = Observable.just("one", "two", "three").skip(0);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, times(1)).onNext("two");
-        verify(NbpObserver, times(1)).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
+        verify(observer, times(1)).onNext("one");
+        verify(observer, times(1)).onNext("two");
+        verify(observer, times(1)).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -59,13 +58,13 @@ public class ObservableSkipTest {
 
         Observable<String> skip = Observable.just("one", "two", "three").skip(1);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
-        verify(NbpObserver, never()).onNext("one");
-        verify(NbpObserver, times(1)).onNext("two");
-        verify(NbpObserver, times(1)).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
+        verify(observer, never()).onNext("one");
+        verify(observer, times(1)).onNext("two");
+        verify(observer, times(1)).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -73,13 +72,13 @@ public class ObservableSkipTest {
 
         Observable<String> skip = Observable.just("one", "two", "three").skip(2);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
-        verify(NbpObserver, never()).onNext("one");
-        verify(NbpObserver, never()).onNext("two");
-        verify(NbpObserver, times(1)).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
+        verify(observer, never()).onNext("one");
+        verify(observer, never()).onNext("two");
+        verify(observer, times(1)).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -88,11 +87,11 @@ public class ObservableSkipTest {
         Observable<String> w = Observable.empty();
         Observable<String> skip = w.skip(1);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
-        verify(NbpObserver, never()).onNext(any(String.class));
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
+        verify(observer, never()).onNext(any(String.class));
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -126,15 +125,15 @@ public class ObservableSkipTest {
 
         Observable<String> skip = Observable.concat(ok, error).skip(100);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        skip.subscribe(NbpObserver);
+        Observer<String> observer = TestHelper.mockObserver();
+        skip.subscribe(observer);
 
-        verify(NbpObserver, never()).onNext(any(String.class));
-        verify(NbpObserver, times(1)).onError(e);
-        verify(NbpObserver, never()).onComplete();
+        verify(observer, never()).onNext(any(String.class));
+        verify(observer, times(1)).onError(e);
+        verify(observer, never()).onComplete();
 
     }
-    
+
     @Test
     public void testRequestOverflowDoesNotOccur() {
         TestObserver<Integer> ts = new TestObserver<Integer>();
@@ -144,5 +143,9 @@ public class ObservableSkipTest {
         ts.assertNoErrors();
         assertEquals(Arrays.asList(6,7,8,9,10), ts.values());
     }
-    
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.just(1).skip(2));
+    }
 }

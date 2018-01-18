@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -16,8 +16,8 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.*;
+import static org.junit.Assert.*;
 
 import java.util.concurrent.*;
 
@@ -27,6 +27,7 @@ import org.mockito.stubbing.Answer;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
+import io.reactivex.functions.Function;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.TestSubscriber;
 
@@ -80,7 +81,7 @@ public class FlowableFromCallableTest {
 
         fromCallableFlowable.subscribe(observer);
 
-        verify(observer, never()).onNext(anyObject());
+        verify(observer, never()).onNext(any());
         verify(observer, never()).onComplete();
         verify(observer).onError(throwable);
     }
@@ -114,7 +115,7 @@ public class FlowableFromCallableTest {
         Flowable<String> fromCallableFlowable = Flowable.fromCallable(func);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
-        
+
         TestSubscriber<String> outer = new TestSubscriber<String>(observer);
 
         fromCallableFlowable
@@ -156,5 +157,85 @@ public class FlowableFromCallableTest {
         verify(observer).onSubscribe(any(Subscription.class));
         verify(observer).onError(checkedException);
         verifyNoMoreInteractions(observer);
+    }
+
+    @Test
+    public void fusedFlatMapExecution() {
+        final int[] calls = { 0 };
+
+        Flowable.just(1).flatMap(new Function<Integer, Publisher<? extends Object>>() {
+            @Override
+            public Publisher<? extends Object> apply(Integer v)
+                    throws Exception {
+                return Flowable.fromCallable(new Callable<Object>() {
+                    @Override
+                    public Object call() throws Exception {
+                        return ++calls[0];
+                    }
+                });
+            }
+        })
+        .test()
+        .assertResult(1);
+
+        assertEquals(1, calls[0]);
+    }
+
+    @Test
+    public void fusedFlatMapExecutionHidden() {
+        final int[] calls = { 0 };
+
+        Flowable.just(1).hide().flatMap(new Function<Integer, Publisher<? extends Object>>() {
+            @Override
+            public Publisher<? extends Object> apply(Integer v)
+                    throws Exception {
+                return Flowable.fromCallable(new Callable<Object>() {
+                    @Override
+                    public Object call() throws Exception {
+                        return ++calls[0];
+                    }
+                });
+            }
+        })
+        .test()
+        .assertResult(1);
+
+        assertEquals(1, calls[0]);
+    }
+
+    @Test
+    public void fusedFlatMapNull() {
+        Flowable.just(1).flatMap(new Function<Integer, Publisher<? extends Object>>() {
+            @Override
+            public Publisher<? extends Object> apply(Integer v)
+                    throws Exception {
+                return Flowable.fromCallable(new Callable<Object>() {
+                    @Override
+                    public Object call() throws Exception {
+                        return null;
+                    }
+                });
+            }
+        })
+        .test()
+        .assertFailure(NullPointerException.class);
+    }
+
+    @Test
+    public void fusedFlatMapNullHidden() {
+        Flowable.just(1).hide().flatMap(new Function<Integer, Publisher<? extends Object>>() {
+            @Override
+            public Publisher<? extends Object> apply(Integer v)
+                    throws Exception {
+                return Flowable.fromCallable(new Callable<Object>() {
+                    @Override
+                    public Object call() throws Exception {
+                        return null;
+                    }
+                });
+            }
+        })
+        .test()
+        .assertFailure(NullPointerException.class);
     }
 }

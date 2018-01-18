@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.flowable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.*;
 
 import java.lang.reflect.Method;
@@ -26,6 +25,7 @@ import org.mockito.InOrder;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
+import io.reactivex.Flowable;
 import io.reactivex.exceptions.*;
 import io.reactivex.functions.LongConsumer;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
@@ -72,7 +72,7 @@ public class FlowableMergeDelayErrorTest {
         Flowable<String> m = Flowable.mergeDelayError(o1, o2, o3, o4);
         m.subscribe(stringObserver);
 
-        verify(stringObserver, times(1)).onError(any(NullPointerException.class));
+        verify(stringObserver, times(1)).onError(any(CompositeException.class));
         verify(stringObserver, never()).onComplete();
         verify(stringObserver, times(1)).onNext("one");
         verify(stringObserver, times(1)).onNext("two");
@@ -196,13 +196,13 @@ public class FlowableMergeDelayErrorTest {
         m.subscribe(w);
 
         assertNotNull(w.e);
-        
+
         int size = ((CompositeException)w.e).size();
         if (size != 2) {
             w.e.printStackTrace();
         }
         assertEquals(2, size);
-        
+
 //        if (w.e instanceof CompositeException) {
 //            assertEquals(2, ((CompositeException) w.e).getExceptions().size());
 //            w.e.printStackTrace();
@@ -226,7 +226,7 @@ public class FlowableMergeDelayErrorTest {
             @Override
             public void subscribe(Subscriber<? super Flowable<String>> observer) {
                 observer.onSubscribe(new BooleanSubscription());
-                // simulate what would happen in an Flowable
+                // simulate what would happen in a Flowable
                 observer.onNext(o1);
                 observer.onNext(o2);
                 observer.onComplete();
@@ -446,18 +446,18 @@ public class FlowableMergeDelayErrorTest {
                 try {
                     t1.onNext(0);
                 } catch (Throwable swallow) {
-                    
+
                 }
                 t1.onNext(1);
                 t1.onComplete();
             }
         });
-        
+
         Flowable<Integer> result = Flowable.mergeDelayError(source, Flowable.just(2));
-        
+
         final Subscriber<Integer> o = TestHelper.mockSubscriber();
         InOrder inOrder = inOrder(o);
-        
+
         result.subscribe(new DefaultSubscriber<Integer>() {
             int calls;
             @Override
@@ -477,9 +477,9 @@ public class FlowableMergeDelayErrorTest {
             public void onComplete() {
                 o.onComplete();
             }
-            
+
         });
-        
+
         /*
          * If the child onNext throws, why would we keep accepting values from
          * other sources?
@@ -520,16 +520,16 @@ public class FlowableMergeDelayErrorTest {
                     op.onError(new NullPointerException("throwing exception in parent"));
                 }
             });
-    
+
             Subscriber<String> stringObserver = TestHelper.mockSubscriber();
-            
+
             TestSubscriber<String> ts = new TestSubscriber<String>(stringObserver);
             Flowable<String> m = Flowable.mergeDelayError(parentFlowable);
             m.subscribe(ts);
             System.out.println("testErrorInParentFlowableDelayed | " + i);
             ts.awaitTerminalEvent(2000, TimeUnit.MILLISECONDS);
             ts.assertTerminated();
-    
+
             verify(stringObserver, times(2)).onNext("hello");
             verify(stringObserver, times(1)).onError(any(NullPointerException.class));
             verify(stringObserver, never()).onComplete();
@@ -563,7 +563,7 @@ public class FlowableMergeDelayErrorTest {
     public void testDelayErrorMaxConcurrent() {
         final List<Long> requests = new ArrayList<Long>();
         Flowable<Integer> source = Flowable.mergeDelayError(Flowable.just(
-                Flowable.just(1).hide(), 
+                Flowable.just(1).hide(),
                 Flowable.<Integer>error(new TestException()))
                 .doOnRequest(new LongConsumer() {
                     @Override
@@ -571,19 +571,19 @@ public class FlowableMergeDelayErrorTest {
                         requests.add(t1);
                     }
                 }), 1);
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
-        
+
         source.subscribe(ts);
-        
+
         ts.assertValue(1);
         ts.assertTerminated();
         ts.assertError(TestException.class);
         assertEquals(Arrays.asList(1L, 1L, 1L), requests);
     }
-    
+
     // This is pretty much a clone of testMergeList but with the overloaded MergeDelayError for Iterables
-    @Test     
+    @Test
     public void mergeIterable() {
         final Flowable<String> o1 = Flowable.unsafeCreate(new TestSynchronousFlowable());
         final Flowable<String> o2 = Flowable.unsafeCreate(new TestSynchronousFlowable());
@@ -596,9 +596,9 @@ public class FlowableMergeDelayErrorTest {
 
         verify(stringObserver, never()).onError(any(Throwable.class));
         verify(stringObserver, times(1)).onComplete();
-        verify(stringObserver, times(2)).onNext("hello");   
+        verify(stringObserver, times(2)).onNext("hello");
     }
-    
+
     @SuppressWarnings("unchecked")
     @Test
     public void iterableMaxConcurrent() {
@@ -606,15 +606,15 @@ public class FlowableMergeDelayErrorTest {
 
         PublishProcessor<Integer> ps1 = PublishProcessor.create();
         PublishProcessor<Integer> ps2 = PublishProcessor.create();
-        
+
         Flowable.mergeDelayError(Arrays.asList(ps1, ps2), 1).subscribe(ts);
-        
+
         assertTrue("ps1 has no subscribers?!", ps1.hasSubscribers());
         assertFalse("ps2 has subscribers?!", ps2.hasSubscribers());
-        
+
         ps1.onNext(1);
         ps1.onComplete();
-        
+
         assertFalse("ps1 has subscribers?!", ps1.hasSubscribers());
         assertTrue("ps2 has no subscribers?!", ps2.hasSubscribers());
 
@@ -625,7 +625,7 @@ public class FlowableMergeDelayErrorTest {
         ts.assertNoErrors();
         ts.assertComplete();
     }
-    
+
     @SuppressWarnings("unchecked")
     @Test
     public void iterableMaxConcurrentError() {
@@ -633,15 +633,15 @@ public class FlowableMergeDelayErrorTest {
 
         PublishProcessor<Integer> ps1 = PublishProcessor.create();
         PublishProcessor<Integer> ps2 = PublishProcessor.create();
-        
+
         Flowable.mergeDelayError(Arrays.asList(ps1, ps2), 1).subscribe(ts);
-        
+
         assertTrue("ps1 has no subscribers?!", ps1.hasSubscribers());
         assertFalse("ps2 has subscribers?!", ps2.hasSubscribers());
-        
+
         ps1.onNext(1);
         ps1.onError(new TestException());
-        
+
         assertFalse("ps1 has subscribers?!", ps1.hasSubscribers());
         assertTrue("ps2 has no subscribers?!", ps2.hasSubscribers());
 
@@ -651,12 +651,12 @@ public class FlowableMergeDelayErrorTest {
         ts.assertValues(1, 2);
         ts.assertError(CompositeException.class);
         ts.assertNotComplete();
-        
+
         CompositeException ce = (CompositeException)ts.errors().get(0);
-        
+
         assertEquals(2, ce.getExceptions().size());
     }
-    
+
     @SuppressWarnings("unchecked")
     @Test
     @Ignore("No 2-9 parameter mergeDelayError() overloads")
@@ -664,19 +664,19 @@ public class FlowableMergeDelayErrorTest {
         for (int i = 2; i < 10; i++) {
             Class<?>[] clazz = new Class[i];
             Arrays.fill(clazz, Flowable.class);
-            
+
             Flowable<Integer>[] obs = new Flowable[i];
             Arrays.fill(obs, Flowable.just(1));
-            
+
             Integer[] expected = new Integer[i];
             Arrays.fill(expected, 1);
-            
+
             Method m = Flowable.class.getMethod("mergeDelayError", clazz);
-            
+
             TestSubscriber<Integer> ts = TestSubscriber.create();
-            
+
             ((Flowable<Integer>)m.invoke(null, (Object[])obs)).subscribe(ts);
-            
+
             ts.assertValues(expected);
             ts.assertNoErrors();
             ts.assertComplete();
@@ -694,29 +694,151 @@ public class FlowableMergeDelayErrorTest {
         for (int i = 2; i < 10; i++) {
             Class<?>[] clazz = new Class[i];
             Arrays.fill(clazz, Flowable.class);
-            
+
             Flowable<Integer>[] obs = new Flowable[i];
             for (int j = 0; j < i; j++) {
                 obs[j] = withError(Flowable.just(1));
             }
-            
+
             Integer[] expected = new Integer[i];
             Arrays.fill(expected, 1);
-            
+
             Method m = Flowable.class.getMethod("mergeDelayError", clazz);
-            
+
             TestSubscriber<Integer> ts = TestSubscriber.create();
-            
+
             ((Flowable<Integer>)m.invoke(null, (Object[])obs)).subscribe(ts);
-            
+
             ts.assertValues(expected);
             ts.assertError(CompositeException.class);
             ts.assertNotComplete();
-            
+
             CompositeException ce = (CompositeException)ts.errors().get(0);
-            
+
             assertEquals(i, ce.getExceptions().size());
         }
     }
 
+    @Test
+    public void array() {
+        for (int i = 1; i < 100; i++) {
+
+            @SuppressWarnings("unchecked")
+            Flowable<Integer>[] sources = new Flowable[i];
+            Arrays.fill(sources, Flowable.just(1));
+            Integer[] expected = new Integer[i];
+            for (int j = 0; j < i; j++) {
+                expected[j] = 1;
+            }
+
+            Flowable.mergeArrayDelayError(sources)
+            .test()
+            .assertResult(expected);
+        }
+    }
+
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void mergeArrayDelayError() {
+        Flowable.mergeArrayDelayError(Flowable.just(1), Flowable.just(2))
+        .test()
+        .assertResult(1, 2);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void mergeIterableDelayErrorWithError() {
+        Flowable.mergeDelayError(
+                Arrays.asList(Flowable.just(1).concatWith(Flowable.<Integer>error(new TestException())),
+                Flowable.just(2)))
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @Test
+    public void mergeDelayError() {
+        Flowable.mergeDelayError(
+                Flowable.just(Flowable.just(1),
+                Flowable.just(2)))
+        .test()
+        .assertResult(1, 2);
+    }
+
+    @Test
+    public void mergeDelayErrorWithError() {
+        Flowable.mergeDelayError(
+                Flowable.just(Flowable.just(1).concatWith(Flowable.<Integer>error(new TestException())),
+                Flowable.just(2)))
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @Test
+    public void mergeDelayErrorMaxConcurrency() {
+        Flowable.mergeDelayError(
+                Flowable.just(Flowable.just(1),
+                Flowable.just(2)), 1)
+        .test()
+        .assertResult(1, 2);
+    }
+
+    @Test
+    public void mergeDelayErrorWithErrorMaxConcurrency() {
+        Flowable.mergeDelayError(
+                Flowable.just(Flowable.just(1).concatWith(Flowable.<Integer>error(new TestException())),
+                Flowable.just(2)), 1)
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void mergeIterableDelayErrorMaxConcurrency() {
+        Flowable.mergeDelayError(
+                Arrays.asList(Flowable.just(1),
+                Flowable.just(2)), 1)
+        .test()
+        .assertResult(1, 2);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void mergeIterableDelayErrorWithErrorMaxConcurrency() {
+        Flowable.mergeDelayError(
+                Arrays.asList(Flowable.just(1).concatWith(Flowable.<Integer>error(new TestException())),
+                Flowable.just(2)), 1)
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @Test
+    public void mergeDelayError3() {
+        Flowable.mergeDelayError(
+                Flowable.just(1),
+                Flowable.just(2),
+                Flowable.just(3)
+        )
+        .test()
+        .assertResult(1, 2, 3);
+    }
+
+    @Test
+    public void mergeDelayError3WithError() {
+        Flowable.mergeDelayError(
+                Flowable.just(1),
+                Flowable.just(2).concatWith(Flowable.<Integer>error(new TestException())),
+                Flowable.just(3)
+        )
+        .test()
+        .assertFailure(TestException.class, 1, 2, 3);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void mergeIterableDelayError() {
+        Flowable.mergeDelayError(Arrays.asList(Flowable.just(1), Flowable.just(2)))
+        .test()
+        .assertResult(1, 2);
+    }
 }

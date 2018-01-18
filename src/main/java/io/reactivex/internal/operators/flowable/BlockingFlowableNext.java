@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -20,40 +20,35 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.reactivestreams.Publisher;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.Exceptions;
+import io.reactivex.internal.util.*;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.subscribers.DisposableSubscriber;
 
 /**
  * Returns an Iterable that blocks until the Observable emits another item, then returns that item.
  * <p>
- * <img width="640" src="https://github.com/ReactiveX/RxJava/wiki/images/rx-operators/B.next.png" alt="">
+ * <img width="640" height="490" src="https://github.com/ReactiveX/RxJava/wiki/images/rx-operators/B.next.png" alt="">
+ *
+ * @param <T> the value type
  */
-public enum BlockingFlowableNext {
-    ;
-    /**
-     * Returns an {@code Iterable} that blocks until the {@code Observable} emits another item, then returns
-     * that item.
-     *
-     * @param <T> the value type
-     * @param items
-     *            the {@code Observable} to observe
-     * @return an {@code Iterable} that behaves like a blocking version of {@code items}
-     */
-    public static <T> Iterable<T> next(final Publisher<? extends T> items) {
-        return new Iterable<T>() {
-            @Override
-            public Iterator<T> iterator() {
-                NextObserver<T> nextObserver = new NextObserver<T>();
-                return new NextIterator<T>(items, nextObserver);
-            }
-        };
+public final class BlockingFlowableNext<T> implements Iterable<T> {
 
+    final Publisher<? extends T> source;
+
+    public BlockingFlowableNext(Publisher<? extends T> source) {
+        this.source = source;
+    }
+
+    @Override
+    public Iterator<T> iterator() {
+        NextSubscriber<T> nextSubscriber = new NextSubscriber<T>();
+        return new NextIterator<T>(source, nextSubscriber);
     }
 
     // test needs to access the observer.waiting flag
     static final class NextIterator<T> implements Iterator<T> {
 
-        private final NextObserver<T> observer;
+        private final NextSubscriber<T> observer;
         private final Publisher<? extends T> items;
         private T next;
         private boolean hasNext = true;
@@ -61,7 +56,7 @@ public enum BlockingFlowableNext {
         private Throwable error;
         private boolean started;
 
-        NextIterator(Publisher<? extends T> items, NextObserver<T> observer) {
+        NextIterator(Publisher<? extends T> items, NextSubscriber<T> observer) {
             this.items = items;
             this.observer = observer;
         }
@@ -70,7 +65,7 @@ public enum BlockingFlowableNext {
         public boolean hasNext() {
             if (error != null) {
                 // If any error has already been thrown, throw it again.
-                throw Exceptions.propagate(error);
+                throw ExceptionHelper.wrapOrThrow(error);
             }
             // Since an iterator should not be used in different thread,
             // so we do not need any synchronization.
@@ -91,7 +86,7 @@ public enum BlockingFlowableNext {
                     Flowable.<T>fromPublisher(items)
                     .materialize().subscribe(observer);
                 }
-                
+
                 Notification<T> nextNotification = observer.takeNext();
                 if (nextNotification.isOnNext()) {
                     isNextConsumed = false;
@@ -106,14 +101,13 @@ public enum BlockingFlowableNext {
                 }
                 if (nextNotification.isOnError()) {
                     error = nextNotification.getError();
-                    throw Exceptions.propagate(error);
+                    throw ExceptionHelper.wrapOrThrow(error);
                 }
                 throw new IllegalStateException("Should not reach here");
             } catch (InterruptedException e) {
                 observer.dispose();
-                Thread.currentThread().interrupt();
                 error = e;
-                throw Exceptions.propagate(e);
+                throw ExceptionHelper.wrapOrThrow(e);
             }
         }
 
@@ -121,7 +115,7 @@ public enum BlockingFlowableNext {
         public T next() {
             if (error != null) {
                 // If any error has already been thrown, throw it again.
-                throw Exceptions.propagate(error);
+                throw ExceptionHelper.wrapOrThrow(error);
             }
             if (hasNext()) {
                 isNextConsumed = true;
@@ -138,7 +132,7 @@ public enum BlockingFlowableNext {
         }
     }
 
-    static final class NextObserver<T> extends DisposableSubscriber<Notification<T>> {
+    static final class NextSubscriber<T> extends DisposableSubscriber<Notification<T>> {
         private final BlockingQueue<Notification<T>> buf = new ArrayBlockingQueue<Notification<T>>(1);
         final AtomicInteger waiting = new AtomicInteger();
 
@@ -149,7 +143,7 @@ public enum BlockingFlowableNext {
 
         @Override
         public void onError(Throwable e) {
-            // ignore
+            RxJavaPlugins.onError(e);
         }
 
         @Override
@@ -168,9 +162,10 @@ public enum BlockingFlowableNext {
             }
 
         }
-        
+
         public Notification<T> takeNext() throws InterruptedException {
             setWaiting();
+            BlockingHelper.verifyNonBlocking();
             return buf.take();
         }
         void setWaiting() {

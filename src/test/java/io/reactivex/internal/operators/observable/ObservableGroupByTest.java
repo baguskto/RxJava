@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
@@ -22,7 +21,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import org.junit.Test;
-import org.mockito.Matchers;
 
 import io.reactivex.*;
 import io.reactivex.Observable;
@@ -30,9 +28,13 @@ import io.reactivex.Observer;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
 import io.reactivex.observables.GroupedObservable;
 import io.reactivex.observers.*;
 import io.reactivex.schedulers.Schedulers;
+import io.reactivex.subjects.PublishSubject;
+
+import org.mockito.Mockito;
 
 public class ObservableGroupByTest {
 
@@ -143,11 +145,11 @@ public class ObservableGroupByTest {
         assertNotNull(error.get());
     }
 
-    private static <K, V> Map<K, Collection<V>> toMap(Observable<GroupedObservable<K, V>> NbpObservable) {
+    private static <K, V> Map<K, Collection<V>> toMap(Observable<GroupedObservable<K, V>> observable) {
 
         final ConcurrentHashMap<K, Collection<V>> result = new ConcurrentHashMap<K, Collection<V>>();
 
-        NbpObservable.blockingForEach(new Consumer<GroupedObservable<K, V>>() {
+        observable.blockingForEach(new Consumer<GroupedObservable<K, V>>() {
 
             @Override
             public void accept(final GroupedObservable<K, V> o) {
@@ -168,8 +170,8 @@ public class ObservableGroupByTest {
 
     /**
      * Assert that only a single subscription to a stream occurs and that all events are received.
-     * 
-     * @throws Throwable
+     *
+     * @throws Throwable some method may throw
      */
     @Test
     public void testGroupedEventStream() throws Throwable {
@@ -184,8 +186,8 @@ public class ObservableGroupByTest {
         Observable<Event> es = Observable.unsafeCreate(new ObservableSource<Event>() {
 
             @Override
-            public void subscribe(final Observer<? super Event> NbpObserver) {
-                NbpObserver.onSubscribe(Disposables.empty());
+            public void subscribe(final Observer<? super Event> observer) {
+                observer.onSubscribe(Disposables.empty());
                 System.out.println("*** Subscribing to EventStream ***");
                 subscribeCounter.incrementAndGet();
                 new Thread(new Runnable() {
@@ -196,9 +198,9 @@ public class ObservableGroupByTest {
                             Event e = new Event();
                             e.source = i % groupCount;
                             e.message = "Event-" + i;
-                            NbpObserver.onNext(e);
+                            observer.onNext(e);
                         }
-                        NbpObserver.onComplete();
+                        observer.onComplete();
                     }
 
                 }).start();
@@ -216,7 +218,7 @@ public class ObservableGroupByTest {
 
             @Override
             public Observable<String> apply(GroupedObservable<Integer, Event> eventGroupedObservable) {
-                System.out.println("NbpGroupedObservable Key: " + eventGroupedObservable.getKey());
+                System.out.println("GroupedObservable Key: " + eventGroupedObservable.getKey());
                 groupCounter.incrementAndGet();
 
                 return eventGroupedObservable.map(new Function<Event, String>() {
@@ -296,7 +298,7 @@ public class ObservableGroupByTest {
 
                     @Override
                     public Observable<String> apply(GroupedObservable<Integer, Event> eventGroupedObservable) {
-                        System.out.println("testUnsubscribe => NbpGroupedObservable Key: " + eventGroupedObservable.getKey());
+                        System.out.println("testUnsubscribe => GroupedObservable Key: " + eventGroupedObservable.getKey());
                         groupCounter.incrementAndGet();
 
                         return eventGroupedObservable
@@ -473,7 +475,7 @@ public class ObservableGroupByTest {
 
                     @Override
                     public void onComplete() {
-                        System.out.println("=> onCompleted");
+                        System.out.println("=> onComplete");
                         latch.countDown();
                     }
 
@@ -633,7 +635,7 @@ public class ObservableGroupByTest {
                         }
 
                     })
-                            // must take(2) so an onCompleted + unsubscribe happens on these first 2 groups
+                            // must take(2) so an onComplete + unsubscribe happens on these first 2 groups
                             .take(2).doOnComplete(new Action() {
 
                                 @Override
@@ -712,7 +714,7 @@ public class ObservableGroupByTest {
                         }
 
                     })
-                            // must take(2) so an onCompleted + unsubscribe happens on these first 2 groups
+                            // must take(2) so an onComplete + unsubscribe happens on these first 2 groups
                             .take(2).doOnComplete(new Action() {
 
                                 @Override
@@ -804,7 +806,7 @@ public class ObservableGroupByTest {
                         }
 
                     })
-                            // must take(2) so an onCompleted + unsubscribe happens on these first 2 groups
+                            // must take(2) so an onComplete + unsubscribe happens on these first 2 groups
                             .take(2).doOnComplete(new Action() {
 
                                 @Override
@@ -1001,8 +1003,8 @@ public class ObservableGroupByTest {
         stream.subscribe(o2);
 
         // check that subscriptions were successful
-        verify(o1, never()).onError(Matchers.<Throwable> any());
-        verify(o2, never()).onError(Matchers.<Throwable> any());
+        verify(o1, never()).onError(Mockito.<Throwable> any());
+        verify(o2, never()).onError(Mockito.<Throwable> any());
     }
 
     private static Function<Long, Boolean> IS_EVEN = new Function<Long, Boolean>() {
@@ -1112,12 +1114,12 @@ public class ObservableGroupByTest {
                 "    fOo    "
                 ));
 
-        /**
+        /*
          * foo FoO foO FOO fOo
          * baR bar BAR
          * Baz baz bAZ
          * qux
-         * 
+         *
          */
         Function<String, String> keysel = new Function<String, String>() {
             @Override
@@ -1139,7 +1141,7 @@ public class ObservableGroupByTest {
                 System.out.println("-----------> NEXT: " + g.getKey());
                 return g.take(2).map(new Function<String, String>() {
 
-                    int count = 0;
+                    int count;
 
                     @Override
                     public String apply(String v) {
@@ -1201,7 +1203,7 @@ public class ObservableGroupByTest {
     }
 
     /**
-     * Assert we get an IllegalStateException if trying to subscribe to an inner NbpGroupedObservable more than once
+     * Assert we get an IllegalStateException if trying to subscribe to an inner GroupedObservable more than once.
      */
     @Test
     public void testExceptionIfSubscribeToChildMoreThanOnce() {
@@ -1261,7 +1263,7 @@ public class ObservableGroupByTest {
 
                 }).observeOn(Schedulers.computation()).map(new Function<Integer, String>() {
 
-                    int c = 0;
+                    int c;
 
                     @Override
                     public String apply(Integer l) {
@@ -1354,9 +1356,9 @@ public class ObservableGroupByTest {
         }).subscribe(new Consumer<GroupedObservable<String, String>>() {
 
             @Override
-            public void accept(GroupedObservable<String, String> NbpGroupedObservable) {
-                key[0] = NbpGroupedObservable.getKey();
-                NbpGroupedObservable.subscribe(new Consumer<String>() {
+            public void accept(GroupedObservable<String, String> groupedObservable) {
+                key[0] = groupedObservable.getKey();
+                groupedObservable.subscribe(new Consumer<String>() {
 
                     @Override
                     public void accept(String s) {
@@ -1375,13 +1377,13 @@ public class ObservableGroupByTest {
         Observable<Integer> o = Observable.unsafeCreate(
                 new ObservableSource<Integer>() {
                     @Override
-                    public void subscribe(Observer<? super Integer> NbpSubscriber) {
-                        NbpSubscriber.onSubscribe(s);
+                    public void subscribe(Observer<? super Integer> observer) {
+                        observer.onSubscribe(s);
                     }
                 }
         );
         TestObserver<Object> ts = new TestObserver<Object>();
-        
+
         o.groupBy(new Function<Integer, Integer>() {
 
             @Override
@@ -1389,9 +1391,9 @@ public class ObservableGroupByTest {
                 return null;
             }
         }).subscribe(ts);
-        
+
         ts.dispose();
-        
+
         verify(s).dispose();
     }
 
@@ -1424,11 +1426,11 @@ public class ObservableGroupByTest {
         Observable.unsafeCreate(
                 new ObservableSource<Integer>() {
                     @Override
-                    public void subscribe(Observer<? super Integer> NbpSubscriber) {
-                        NbpSubscriber.onSubscribe(Disposables.empty());
-                        NbpSubscriber.onNext(0);
-                        NbpSubscriber.onNext(1);
-                        NbpSubscriber.onError(e);
+                    public void subscribe(Observer<? super Integer> observer) {
+                        observer.onSubscribe(Disposables.empty());
+                        observer.onNext(0);
+                        observer.onNext(1);
+                        observer.onError(e);
                     }
                 }
         ).groupBy(new Function<Integer, Integer>() {
@@ -1441,5 +1443,102 @@ public class ObservableGroupByTest {
         assertEquals(Arrays.asList(e), outer.errors());
         assertEquals(Arrays.asList(e), inner1.errors());
         assertEquals(Arrays.asList(e), inner2.errors());
+    }
+
+    @Test
+    public void keySelectorAndDelayError() {
+        Observable.just(1).concatWith(Observable.<Integer>error(new TestException()))
+        .groupBy(Functions.<Integer>identity(), true)
+        .flatMap(new Function<GroupedObservable<Integer, Integer>, ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> apply(GroupedObservable<Integer, Integer> g) throws Exception {
+                return g;
+            }
+        })
+        .test()
+        .assertFailure(TestException.class, 1);
+    }
+
+    @Test
+    public void keyAndValueSelectorAndDelayError() {
+        Observable.just(1).concatWith(Observable.<Integer>error(new TestException()))
+        .groupBy(Functions.<Integer>identity(), Functions.<Integer>identity(), true)
+        .flatMap(new Function<GroupedObservable<Integer, Integer>, ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> apply(GroupedObservable<Integer, Integer> g) throws Exception {
+                return g;
+            }
+        })
+        .test()
+        .assertFailure(TestException.class, 1);
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.just(1).groupBy(Functions.justFunction(1)));
+
+        Observable.just(1)
+        .groupBy(Functions.justFunction(1))
+        .doOnNext(new Consumer<GroupedObservable<Integer, Integer>>() {
+            @Override
+            public void accept(GroupedObservable<Integer, Integer> g) throws Exception {
+                TestHelper.checkDisposed(g);
+            }
+        })
+        .test();
+    }
+
+    @Test
+    public void reentrantComplete() {
+        final PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = new TestObserver<Integer>() {
+            @Override
+            public void onNext(Integer t) {
+                super.onNext(t);
+                if (t == 1) {
+                    ps.onComplete();
+                }
+            }
+        };
+
+        Observable.merge(ps.groupBy(Functions.justFunction(1)))
+        .subscribe(to);
+
+        ps.onNext(1);
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void reentrantCompleteCancel() {
+        final PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = new TestObserver<Integer>() {
+            @Override
+            public void onNext(Integer t) {
+                super.onNext(t);
+                if (t == 1) {
+                    ps.onComplete();
+                    dispose();
+                }
+            }
+        };
+
+        Observable.merge(ps.groupBy(Functions.justFunction(1)))
+        .subscribe(to);
+
+        ps.onNext(1);
+
+        to.assertSubscribed().assertValue(1).assertNoErrors().assertNotComplete();
+    }
+
+    @Test
+    public void delayErrorSimpleComplete() {
+        Observable.just(1)
+        .groupBy(Functions.justFunction(1), true)
+        .flatMap(Functions.<Observable<Integer>>identity())
+        .test()
+        .assertResult(1);
     }
 }

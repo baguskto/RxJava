@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,25 +13,29 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.mockito.Matchers.any;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
 
 import org.junit.*;
 
+import io.reactivex.*;
 import io.reactivex.Observable;
 import io.reactivex.Observer;
-import io.reactivex.TestHelper;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.fuseable.QueueDisposable;
+import io.reactivex.observers.*;
 import io.reactivex.schedulers.Schedulers;
+import io.reactivex.subjects.UnicastSubject;
 
 public class ObservableMapTest {
 
     Observer<String> stringObserver;
     Observer<String> stringObserver2;
 
-    final static BiFunction<String, Integer, String> APPEND_INDEX = new BiFunction<String, Integer, String>() {
+    static final BiFunction<String, Integer, String> APPEND_INDEX = new BiFunction<String, Integer, String>() {
         @Override
         public String apply(String value, Integer index) {
             return value + index;
@@ -56,7 +60,7 @@ public class ObservableMapTest {
                 return map.get("firstName");
             }
         });
-        
+
         m.subscribe(stringObserver);
 
         verify(stringObserver, never()).onError(any(Throwable.class));
@@ -75,7 +79,7 @@ public class ObservableMapTest {
 
             @Override
             public Observable<String> apply(Integer id) {
-                /* simulate making a nested async call which creates another NbpObservable */
+                /* simulate making a nested async call which creates another Observable */
                 Observable<Map<String, String>> subObservable = null;
                 if (id == 1) {
                     Map<String, String> m1 = getMap("One");
@@ -204,16 +208,16 @@ public class ObservableMapTest {
     /**
      * While mapping over range(1,0).last() we expect NoSuchElementException since the sequence is empty.
      */
-    @Test(expected = NoSuchElementException.class)
+    @Test
     public void testErrorPassesThruMap() {
-        Observable.range(1, 0).last().map(new Function<Integer, Integer>() {
+        assertNull(Observable.range(1, 0).lastElement().map(new Function<Integer, Integer>() {
 
             @Override
             public Integer apply(Integer i) {
                 return i;
             }
 
-        }).blockingSingle();
+        }).blockingGet());
     }
 
     /**
@@ -237,37 +241,37 @@ public class ObservableMapTest {
      */
     @Test(expected = ArithmeticException.class)
     public void testMapWithErrorInFunc() {
-        Observable.range(1, 1).last().map(new Function<Integer, Integer>() {
+        Observable.range(1, 1).lastElement().map(new Function<Integer, Integer>() {
 
             @Override
             public Integer apply(Integer i) {
                 return i / 0;
             }
 
-        }).blockingSingle();
+        }).blockingGet();
     }
 
     // FIXME RS subscribers can't throw
 //    @Test(expected = OnErrorNotImplementedException.class)
 //    public void verifyExceptionIsThrownIfThereIsNoExceptionHandler() {
 //
-//        ObservableConsumable<Object> creator = new ObservableConsumable<Object>() {
+//        ObservableSource<Object> creator = new ObservableSource<Object>() {
 //
 //            @Override
-//            public void accept(NbpSubscriber<? super Object> NbpObserver) {
-//                NbpObserver.onSubscribe(EmptyDisposable.INSTANCE);
-//                NbpObserver.onNext("a");
-//                NbpObserver.onNext("b");
-//                NbpObserver.onNext("c");
-//                NbpObserver.onComplete();
+//            public void subscribeActual(Observer<? super Object> observer) {
+//                observer.onSubscribe(EmptyDisposable.INSTANCE);
+//                observer.onNext("a");
+//                observer.onNext("b");
+//                observer.onNext("c");
+//                observer.onComplete();
 //            }
 //        };
 //
-//        Function<Object, NbpObservable<Object>> manyMapper = new Function<Object, NbpObservable<Object>>() {
+//        Function<Object, Observable<Object>> manyMapper = new Function<Object, Observable<Object>>() {
 //
 //            @Override
-//            public NbpObservable<Object> apply(Object object) {
-//                return NbpObservable.just(object);
+//            public Observable<Object> apply(Object object) {
+//                return Observable.just(object);
 //            }
 //        };
 //
@@ -293,7 +297,7 @@ public class ObservableMapTest {
 //        };
 //
 //        try {
-//            NbpObservable.create(creator).flatMap(manyMapper).map(mapper).subscribe(onNext);
+//            Observable.unsafeCreate(creator).flatMap(manyMapper).map(mapper).subscribe(onNext);
 //        } catch (RuntimeException e) {
 //            e.printStackTrace();
 //            throw e;
@@ -310,15 +314,15 @@ public class ObservableMapTest {
     // FIXME RS subscribers can't throw
 //    @Test(expected = OnErrorNotImplementedException.class)
 //    public void testShouldNotSwallowOnErrorNotImplementedException() {
-//        NbpObservable.just("a", "b").flatMap(new Function<String, NbpObservable<String>>() {
+//        Observable.just("a", "b").flatMap(new Function<String, Observable<String>>() {
 //            @Override
-//            public NbpObservable<String> apply(String s) {
-//                return NbpObservable.just(s + "1", s + "2");
+//            public Observable<String> apply(String s) {
+//                return Observable.just(s + "1", s + "2");
 //            }
-//        }).flatMap(new Function<String, NbpObservable<String>>() {
+//        }).flatMap(new Function<String, Observable<String>>() {
 //            @Override
-//            public NbpObservable<String> apply(String s) {
-//                return NbpObservable.error(new Exception("test"));
+//            public Observable<String> apply(String s) {
+//                return Observable.error(new Exception("test"));
 //            }
 //        }).forEach(new Consumer<String>() {
 //            @Override
@@ -327,4 +331,69 @@ public class ObservableMapTest {
 //            }
 //        });
 //    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.range(1, 5).map(Functions.identity()));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.map(Functions.identity());
+            }
+        });
+    }
+
+    @Test
+    public void fusedSync() {
+        TestObserver<Integer> to = ObserverFusion.newTest(QueueDisposable.ANY);
+
+        Observable.range(1, 5)
+        .map(Functions.<Integer>identity())
+        .subscribe(to);
+
+        ObserverFusion.assertFusion(to, QueueDisposable.SYNC)
+        .assertResult(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    public void fusedAsync() {
+        TestObserver<Integer> to = ObserverFusion.newTest(QueueDisposable.ANY);
+
+        UnicastSubject<Integer> us = UnicastSubject.create();
+
+        us
+        .map(Functions.<Integer>identity())
+        .subscribe(to);
+
+        TestHelper.emit(us, 1, 2, 3, 4, 5);
+
+        ObserverFusion.assertFusion(to, QueueDisposable.ASYNC)
+        .assertResult(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    public void fusedReject() {
+        TestObserver<Integer> to = ObserverFusion.newTest(QueueDisposable.ANY | QueueDisposable.BOUNDARY);
+
+        Observable.range(1, 5)
+        .map(Functions.<Integer>identity())
+        .subscribe(to);
+
+        ObserverFusion.assertFusion(to, QueueDisposable.NONE)
+        .assertResult(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    public void badSource() {
+        TestHelper.checkBadSourceObservable(new Function<Observable<Object>, Object>() {
+            @Override
+            public Object apply(Observable<Object> o) throws Exception {
+                return o.map(Functions.identity());
+            }
+        }, false, 1, 1, 1);
+    }
 }

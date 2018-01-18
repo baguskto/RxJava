@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.*;
 
 import org.reactivestreams.*;
 
+import io.reactivex.*;
+import io.reactivex.annotations.Nullable;
 import io.reactivex.exceptions.*;
 import io.reactivex.functions.Function;
 import io.reactivex.internal.functions.ObjectHelper;
@@ -34,13 +36,10 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
     final int prefetch;
 
-    public FlowableFlattenIterable(Publisher<T> source,
+    public FlowableFlattenIterable(Flowable<T> source,
             Function<? super T, ? extends Iterable<? extends R>> mapper, int prefetch) {
         super(source);
-        if (prefetch <= 0) {
-            throw new IllegalArgumentException("prefetch > 0 required but it was " + prefetch);
-        }
-        this.mapper = ObjectHelper.requireNonNull(mapper, "mapper");
+        this.mapper = mapper;
         this.prefetch = prefetch;
     }
 
@@ -84,9 +83,9 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
     static final class FlattenIterableSubscriber<T, R>
     extends BasicIntQueueSubscription<R>
-    implements Subscriber<T> {
+    implements FlowableSubscriber<T> {
 
-        /** */
+
         private static final long serialVersionUID = -3096000382929934955L;
 
         final Subscriber<? super R> actual;
@@ -115,7 +114,7 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
         int fusionMode;
 
-        public FlattenIterableSubscriber(Subscriber<? super R> actual,
+        FlattenIterableSubscriber(Subscriber<? super R> actual,
                 Function<? super T, ? extends Iterable<? extends R>> mapper, int prefetch) {
             this.actual = actual;
             this.mapper = mapper;
@@ -166,7 +165,10 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
         @Override
         public void onNext(T t) {
-            if (fusionMode != ASYNC && !queue.offer(t)) {
+            if (done) {
+                return;
+            }
+            if (fusionMode == NONE && !queue.offer(t)) {
                 onError(new MissingBackpressureException("Queue is full?!"));
                 return;
             }
@@ -175,7 +177,7 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
         @Override
         public void onError(Throwable t) {
-            if (ExceptionHelper.addThrowable(error, t)) {
+            if (!done && ExceptionHelper.addThrowable(error, t)) {
                 done = true;
                 drain();
             } else {
@@ -185,6 +187,9 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
         @Override
         public void onComplete() {
+            if (done) {
+                return;
+            }
             done = true;
             drain();
         }
@@ -203,7 +208,7 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
                 cancelled = true;
 
                 s.cancel();
-                
+
                 if (getAndIncrement() == 0) {
                     queue.clear();
                 }
@@ -266,9 +271,10 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
                         } catch (Throwable ex) {
                             Exceptions.throwIfFatal(ex);
                             s.cancel();
-                            onError(ex);
-                            it = null;
-                            continue;
+                            ExceptionHelper.addThrowable(error, ex);
+                            ex = ExceptionHelper.terminate(error);
+                            a.onError(ex);
+                            return;
                         }
 
                         if (!b) {
@@ -293,12 +299,15 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
                         R v;
 
                         try {
-                            v = it.next();
+                            v = ObjectHelper.requireNonNull(it.next(), "The iterator returned a null value");
                         } catch (Throwable ex) {
                             Exceptions.throwIfFatal(ex);
+                            current = null;
                             s.cancel();
-                            onError(ex);
-                            continue;
+                            ExceptionHelper.addThrowable(error, ex);
+                            ex = ExceptionHelper.terminate(error);
+                            a.onError(ex);
+                            return;
                         }
 
                         a.onNext(v);
@@ -315,9 +324,12 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
                             b = it.hasNext();
                         } catch (Throwable ex) {
                             Exceptions.throwIfFatal(ex);
+                            current = null;
                             s.cancel();
-                            onError(ex);
-                            continue;
+                            ExceptionHelper.addThrowable(error, ex);
+                            ex = ExceptionHelper.terminate(error);
+                            a.onError(ex);
+                            return;
                         }
 
                         if (!b) {
@@ -330,16 +342,7 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
 
                     if (e == r) {
                         boolean d = done;
-                        boolean empty;
-
-                        try {
-                            empty = q.isEmpty() && it == null;
-                        } catch (Throwable ex) {
-                            Exceptions.throwIfFatal(ex);
-                            s.cancel();
-                            onError(ex);
-                            empty = true;
-                        }
+                        boolean empty = q.isEmpty() && it == null;
 
                         if (checkTerminated(d, empty, a, q)) {
                             return;
@@ -409,12 +412,13 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
         @Override
         public boolean isEmpty() {
             Iterator<? extends R> it = current;
-            if (it != null) {
-                return it.hasNext();
+            if (it == null) {
+                return queue.isEmpty();
             }
-            return queue.isEmpty(); // estimate
+            return !it.hasNext();
         }
 
+        @Nullable
         @Override
         public R poll() throws Exception {
             Iterator<? extends R> it = current;
@@ -428,12 +432,13 @@ public final class FlowableFlattenIterable<T, R> extends AbstractFlowableWithUps
                     it = mapper.apply(v).iterator();
 
                     if (!it.hasNext()) {
+                        it = null;
                         continue;
                     }
                     current = it;
                 }
 
-                R r = it.next();
+                R r = ObjectHelper.requireNonNull(it.next(), "The iterator returned a null value");
 
                 if (!it.hasNext()) {
                     current = null;

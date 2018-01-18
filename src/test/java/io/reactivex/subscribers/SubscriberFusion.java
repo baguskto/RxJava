@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -24,7 +24,7 @@ import io.reactivex.internal.fuseable.*;
  */
 public enum SubscriberFusion {
     ;
-    
+
     /**
      * Returns a function that takes a Flowable and returns a TestSubscriber that
      * is set up according to the parameters and is subscribed to the Flowable.
@@ -43,18 +43,7 @@ public enum SubscriberFusion {
      */
     public static <T> Function<Flowable<T>, TestSubscriber<T>> test(
             final long initialRequest, final int mode, final boolean cancelled) {
-        return new Function<Flowable<T>, TestSubscriber<T>>() {
-            @Override
-            public TestSubscriber<T> apply(Flowable<T> t) throws Exception {
-                TestSubscriber<T> ts = new TestSubscriber<T>(initialRequest);
-                ts.setInitialFusionMode(mode);
-                if (cancelled) {
-                    ts.cancel();
-                }
-                t.subscribe(ts);
-                return ts;
-            }
-        };
+        return new TestFusionCheckFunction<T>(mode, cancelled, initialRequest);
     }
     /**
      * Returns a Consumer that asserts on its TestSubscriber parameter that
@@ -73,7 +62,43 @@ public enum SubscriberFusion {
     public static <T> Consumer<TestSubscriber<T>> assertFuseable() {
         return (Consumer)AssertFuseable.INSTANCE;
     }
-    
+
+    static final class AssertFusionConsumer<T> implements Consumer<TestSubscriber<T>> {
+        private final int mode;
+
+        AssertFusionConsumer(int mode) {
+            this.mode = mode;
+        }
+
+        @Override
+        public void accept(TestSubscriber<T> ts) throws Exception {
+            ts.assertFusionMode(mode);
+        }
+    }
+
+    static final class TestFusionCheckFunction<T> implements Function<Flowable<T>, TestSubscriber<T>> {
+        private final int mode;
+        private final boolean cancelled;
+        private final long initialRequest;
+
+        TestFusionCheckFunction(int mode, boolean cancelled, long initialRequest) {
+            this.mode = mode;
+            this.cancelled = cancelled;
+            this.initialRequest = initialRequest;
+        }
+
+        @Override
+        public TestSubscriber<T> apply(Flowable<T> t) throws Exception {
+            TestSubscriber<T> ts = new TestSubscriber<T>(initialRequest);
+            ts.setInitialFusionMode(mode);
+            if (cancelled) {
+                ts.cancel();
+            }
+            t.subscribe(ts);
+            return ts;
+        }
+    }
+
     enum AssertFuseable implements Consumer<TestSubscriber<Object>> {
         INSTANCE;
         @Override
@@ -124,14 +149,9 @@ public enum SubscriberFusion {
      * @return the new Consumer instance
      */
     public static <T> Consumer<TestSubscriber<T>> assertFusionMode(final int mode) {
-        return new Consumer<TestSubscriber<T>>() {
-            @Override
-            public void accept(TestSubscriber<T> ts) throws Exception {
-                ts.assertFusionMode(mode);
-            }
-        };
+        return new AssertFusionConsumer<T>(mode);
     }
-    
+
     /**
      * Constructs a TestSubscriber with the given initial request and required fusion mode.
      * @param <T> the value type
@@ -155,5 +175,18 @@ public enum SubscriberFusion {
         TestSubscriber<T> ts = new TestSubscriber<T>();
         ts.setInitialFusionMode(mode);
         return ts;
+    }
+
+    /**
+     * Assert that the TestSubscriber received a fuseabe QueueSubscription and
+     * is in the given fusion mode.
+     * @param <T> the value type
+     * @param ts the TestSubscriber instance
+     * @param mode the expected mode
+     * @return the TestSubscriber
+     */
+    public static <T> TestSubscriber<T> assertFusion(TestSubscriber<T> ts, int mode) {
+        return ts.assertOf(SubscriberFusion.<T>assertFuseable())
+                .assertOf(SubscriberFusion.<T>assertFusionMode(mode));
     }
 }

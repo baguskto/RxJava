@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,32 +15,25 @@
  */
 package io.reactivex.exceptions;
 
-import io.reactivex.Observable;
-import io.reactivex.ObservableSource;
-import io.reactivex.Observer;
-import io.reactivex.Single;
-import io.reactivex.SingleObserver;
-import io.reactivex.SingleSource;
-import io.reactivex.TestHelper;
+import static org.junit.Assert.*;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.*;
+import org.reactivestreams.*;
+
+import io.reactivex.*;
 import io.reactivex.disposables.Disposable;
-import io.reactivex.functions.Consumer;
-import io.reactivex.functions.Function;
+import io.reactivex.functions.*;
 import io.reactivex.internal.util.ExceptionHelper;
 import io.reactivex.observables.GroupedObservable;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.subjects.PublishSubject;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
-
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 public class ExceptionsTest {
-    
+
     @Ignore("Exceptions is not an enum")
     @Test
     public void constructorShouldBePrivate() {
@@ -50,7 +43,7 @@ public class ExceptionsTest {
     @Test
     public void testOnErrorNotImplementedIsThrown() {
         List<Throwable> errors = TestHelper.trackPluginErrors();
-        
+
         Observable.just(1, 2, 3).subscribe(new Consumer<Integer>() {
 
             @Override
@@ -59,7 +52,7 @@ public class ExceptionsTest {
             }
 
         });
-        
+
         TestHelper.assertError(errors, 0, RuntimeException.class, "hello");
         RxJavaPlugins.reset();
     }
@@ -84,10 +77,10 @@ public class ExceptionsTest {
                 @Override
                 public void onNext(Object o) {
                 }
-                
+
                 @Override
                 public void onSubscribe(Disposable d) {
-                    
+
                 }
             });
     }
@@ -98,14 +91,14 @@ public class ExceptionsTest {
         final PublishSubject<Integer> b = PublishSubject.create();
         final int MAX_STACK_DEPTH = 800;
         final AtomicInteger depth = new AtomicInteger();
-        
+
         a.subscribe(new Observer<Integer>() {
 
             @Override
             public void onSubscribe(Disposable d) {
-                
+
             }
-            
+
             @Override
             public void onComplete() {
 
@@ -126,9 +119,9 @@ public class ExceptionsTest {
             @Override
             public void onSubscribe(Disposable d) {
                 // TODO Auto-generated method stub
-                
+
             }
-            
+
             @Override
             public void onComplete() {
 
@@ -141,25 +134,25 @@ public class ExceptionsTest {
 
             @Override
             public void onNext(Integer n) {
-                if (depth.get() < MAX_STACK_DEPTH) { 
+                if (depth.get() < MAX_STACK_DEPTH) {
                     depth.set(Thread.currentThread().getStackTrace().length);
                     a.onNext(n + 1);
                 }
             }
         });
         a.onNext(1);
-        assertTrue(depth.get() > MAX_STACK_DEPTH);
+        assertTrue(depth.get() >= MAX_STACK_DEPTH);
     }
-    
+
     @Test(expected = StackOverflowError.class)
     public void testStackOverflowErrorIsThrown() {
         Observable.just(1).subscribe(new Observer<Integer>() {
 
             @Override
             public void onSubscribe(Disposable d) {
-                
+
             }
-            
+
             @Override
             public void onComplete() {
 
@@ -184,9 +177,9 @@ public class ExceptionsTest {
 
             @Override
             public void onSubscribe(Disposable d) {
-                
+
             }
-            
+
             @Override
             public void onComplete() {
 
@@ -216,9 +209,9 @@ public class ExceptionsTest {
 
                 @Override
                 public void onSubscribe(Disposable d) {
-                    
+
                 }
-                
+
                 @Override
                 public void onComplete() {
 
@@ -258,12 +251,12 @@ public class ExceptionsTest {
                 }
             })
             .subscribe(new Observer<GroupedObservable<Integer, Integer>>() {
-                
+
                 @Override
                 public void onSubscribe(Disposable d) {
-                    
+
                 }
-                
+
                 @Override
                 public void onComplete() {
 
@@ -297,12 +290,12 @@ public class ExceptionsTest {
                 }
             })
             .subscribe(new Observer<Integer>() {
-                
+
                 @Override
                 public void onSubscribe(Disposable d) {
-                    
+
                 }
-                
+
                 @Override
                 public void onComplete() {
 
@@ -395,13 +388,13 @@ public class ExceptionsTest {
                                   public void subscribe(SingleObserver<? super Integer> s2) {
                                       throw new IllegalArgumentException("original exception");
                                   }
-                              }).toFlowable().subscribe(new Subscriber<Integer>() {
+                              }).toFlowable().subscribe(new FlowableSubscriber<Integer>() {
 
                                   @Override
                                   public void onSubscribe(Subscription s) {
                                       s.request(Long.MAX_VALUE);
                                   }
-                                  
+
                                   @Override
                                   public void onComplete() {
                                   }
@@ -426,9 +419,9 @@ public class ExceptionsTest {
 
         @Override
         public void onSubscribe(Disposable d) {
-            
+
         }
-        
+
         @Override
         public void onComplete() {
         }
@@ -441,5 +434,83 @@ public class ExceptionsTest {
         @Override
         public void onNext(Integer value) {
         }
+    }
+
+    @Test
+    public void utilityClass() {
+        TestHelper.checkUtilityClass(Exceptions.class);
+    }
+
+    @Test
+    public void manualThrowIfFatal() {
+
+        try {
+            Exceptions.throwIfFatal(new ThreadDeath());
+            fail("Didn't throw fatal exception");
+        } catch (ThreadDeath ex) {
+            // expected
+        }
+
+        try {
+            Exceptions.throwIfFatal(new LinkageError());
+            fail("Didn't throw fatal error");
+        } catch (LinkageError ex) {
+            // expected
+        }
+
+        try {
+            ExceptionHelper.wrapOrThrow(new LinkageError());
+            fail("Didn't propagate Error");
+        } catch (LinkageError ex) {
+            // expected
+        }
+    }
+
+    @Test
+    public void manualPropagate() {
+
+        try {
+            Exceptions.propagate(new InternalError());
+            fail("Didn't throw exception");
+        } catch (InternalError ex) {
+            // expected
+        }
+
+        try {
+            throw Exceptions.propagate(new IllegalArgumentException());
+        } catch (IllegalArgumentException ex) {
+            // expected
+        }
+
+        try {
+            throw ExceptionHelper.wrapOrThrow(new IOException());
+        } catch (RuntimeException ex) {
+            if (!(ex.getCause() instanceof IOException)) {
+                fail(ex.toString() + ": should have thrown RuntimeException(IOException)");
+            }
+        }
+    }
+
+    @Test
+    public void errorNotImplementedNull1() {
+        OnErrorNotImplementedException ex = new OnErrorNotImplementedException(null);
+
+        assertTrue("" + ex.getCause(), ex.getCause() instanceof NullPointerException);
+    }
+
+    @Test
+    public void errorNotImplementedNull2() {
+        OnErrorNotImplementedException ex = new OnErrorNotImplementedException("Message", null);
+
+        assertTrue("" + ex.getCause(), ex.getCause() instanceof NullPointerException);
+    }
+
+    @Test
+    public void errorNotImplementedWithCause() {
+        OnErrorNotImplementedException ex = new OnErrorNotImplementedException("Message", new TestException("Forced failure"));
+
+        assertTrue("" + ex.getCause(), ex.getCause() instanceof TestException);
+
+        assertEquals("" + ex.getCause(), "Forced failure", ex.getCause().getMessage());
     }
 }

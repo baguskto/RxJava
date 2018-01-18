@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -34,35 +34,32 @@ public class BlockingFlowableToFutureTest {
 //        TestHelper.checkUtilityClass(FlowableToFuture.class);
     }
 
-    static <T> Future<T> toFuture(Flowable<T> f) {
-        return f.toFuture();
-    }
-    
     @Test
     public void testToFuture() throws InterruptedException, ExecutionException {
         Flowable<String> obs = Flowable.just("one");
-        Future<String> f = toFuture(obs);
+        Future<String> f = obs.toFuture();
         assertEquals("one", f.get());
     }
 
     @Test
     public void testToFutureList() throws InterruptedException, ExecutionException {
         Flowable<String> obs = Flowable.just("one", "two", "three");
-        Future<List<String>> f = toFuture(obs.toList());
+        Future<List<String>> f = obs.toList().toFuture();
         assertEquals("one", f.get().get(0));
         assertEquals("two", f.get().get(1));
         assertEquals("three", f.get().get(2));
     }
 
-    @Test(expected = IndexOutOfBoundsException.class)
+    @Test(/* timeout = 5000, */expected = IndexOutOfBoundsException.class)
     public void testExceptionWithMoreThanOneElement() throws Throwable {
         Flowable<String> obs = Flowable.just("one", "two");
-        Future<String> f = toFuture(obs);
+        Future<String> f = obs.toFuture();
         try {
             // we expect an exception since there are more than 1 element
             f.get();
+            fail("Should have thrown!");
         }
-        catch(ExecutionException e) {
+        catch (ExecutionException e) {
             throw e.getCause();
         }
     }
@@ -79,7 +76,7 @@ public class BlockingFlowableToFutureTest {
             }
         });
 
-        Future<String> f = toFuture(obs);
+        Future<String> f = obs.toFuture();
         try {
             f.get();
             fail("expected exception");
@@ -88,19 +85,19 @@ public class BlockingFlowableToFutureTest {
         }
     }
 
-    @Test(expected=CancellationException.class)
+    @Test(expected = CancellationException.class)
     public void testGetAfterCancel() throws Exception {
         Flowable<String> obs = Flowable.never();
-        Future<String> f = toFuture(obs);
+        Future<String> f = obs.toFuture();
         boolean cancelled = f.cancel(true);
         assertTrue(cancelled);  // because OperationNeverComplete never does
         f.get();                // Future.get() docs require this to throw
     }
 
-    @Test(expected=CancellationException.class)
+    @Test(expected = CancellationException.class)
     public void testGetWithTimeoutAfterCancel() throws Exception {
         Flowable<String> obs = Flowable.never();
-        Future<String> f = toFuture(obs);
+        Future<String> f = obs.toFuture();
         boolean cancelled = f.cancel(true);
         assertTrue(cancelled);  // because OperationNeverComplete never does
         f.get(Long.MAX_VALUE, TimeUnit.NANOSECONDS);    // Future.get() docs require this to throw
@@ -113,7 +110,7 @@ public class BlockingFlowableToFutureTest {
         try {
             f.get();
         }
-        catch(ExecutionException e) {
+        catch (ExecutionException e) {
             throw e.getCause();
         }
     }

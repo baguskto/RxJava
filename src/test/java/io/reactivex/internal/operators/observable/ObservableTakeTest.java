@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,6 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.Arrays;
@@ -39,13 +38,13 @@ public class ObservableTakeTest {
         Observable<String> w = Observable.fromIterable(Arrays.asList("one", "two", "three"));
         Observable<String> take = w.take(2);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        take.subscribe(NbpObserver);
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, times(1)).onNext("two");
-        verify(NbpObserver, never()).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        take.subscribe(observer);
+        verify(observer, times(1)).onNext("one");
+        verify(observer, times(1)).onNext("two");
+        verify(observer, never()).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -53,13 +52,13 @@ public class ObservableTakeTest {
         Observable<String> w = Observable.fromIterable(Arrays.asList("one", "two", "three"));
         Observable<String> take = w.take(1);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        take.subscribe(NbpObserver);
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, never()).onNext("two");
-        verify(NbpObserver, never()).onNext("three");
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
+        Observer<String> observer = TestHelper.mockObserver();
+        take.subscribe(observer);
+        verify(observer, times(1)).onNext("one");
+        verify(observer, never()).onNext("two");
+        verify(observer, never()).onNext("three");
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -83,10 +82,10 @@ public class ObservableTakeTest {
             }
         });
 
-        Observer<Integer> NbpObserver = TestHelper.mockObserver();
-        w.subscribe(NbpObserver);
-        InOrder inOrder = inOrder(NbpObserver);
-        inOrder.verify(NbpObserver, times(1)).onError(any(IllegalArgumentException.class));
+        Observer<Integer> observer = TestHelper.mockObserver();
+        w.subscribe(observer);
+        InOrder inOrder = inOrder(observer);
+        inOrder.verify(observer, times(1)).onError(any(IllegalArgumentException.class));
         inOrder.verifyNoMoreInteractions();
     }
 
@@ -99,10 +98,10 @@ public class ObservableTakeTest {
             }
         });
 
-        Observer<Integer> NbpObserver = TestHelper.mockObserver();
-        w.subscribe(NbpObserver);
-        InOrder inOrder = inOrder(NbpObserver);
-        inOrder.verify(NbpObserver, times(1)).onError(any(IllegalArgumentException.class));
+        Observer<Integer> observer = TestHelper.mockObserver();
+        w.subscribe(observer);
+        InOrder inOrder = inOrder(observer);
+        inOrder.verify(observer, times(1)).onError(any(IllegalArgumentException.class));
         inOrder.verifyNoMoreInteractions();
     }
 
@@ -110,23 +109,23 @@ public class ObservableTakeTest {
     public void testTakeDoesntLeakErrors() {
         Observable<String> source = Observable.unsafeCreate(new ObservableSource<String>() {
             @Override
-            public void subscribe(Observer<? super String> NbpObserver) {
-                NbpObserver.onSubscribe(Disposables.empty());
-                NbpObserver.onNext("one");
-                NbpObserver.onError(new Throwable("test failed"));
+            public void subscribe(Observer<? super String> observer) {
+                observer.onSubscribe(Disposables.empty());
+                observer.onNext("one");
+                observer.onError(new Throwable("test failed"));
             }
         });
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
+        Observer<String> observer = TestHelper.mockObserver();
 
-        source.take(1).subscribe(NbpObserver);
+        source.take(1).subscribe(observer);
 
-        verify(NbpObserver).onSubscribe((Disposable)notNull());
-        verify(NbpObserver, times(1)).onNext("one");
+        verify(observer).onSubscribe((Disposable)notNull());
+        verify(observer, times(1)).onNext("one");
         // even though onError is called we take(1) so shouldn't see it
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verifyNoMoreInteractions(NbpObserver);
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verifyNoMoreInteractions(observer);
     }
 
     @Test
@@ -136,24 +135,24 @@ public class ObservableTakeTest {
         final Disposable bs = Disposables.empty();
         Observable<String> source = Observable.unsafeCreate(new ObservableSource<String>() {
             @Override
-            public void subscribe(Observer<? super String> NbpObserver) {
+            public void subscribe(Observer<? super String> observer) {
                 subscribed.set(true);
-                NbpObserver.onSubscribe(bs);
-                NbpObserver.onError(new Throwable("test failed"));
+                observer.onSubscribe(bs);
+                observer.onError(new Throwable("test failed"));
             }
         });
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
+        Observer<String> observer = TestHelper.mockObserver();
 
-        source.take(0).subscribe(NbpObserver);
+        source.take(0).subscribe(observer);
         assertTrue("source subscribed", subscribed.get());
         assertTrue("source unsubscribed", bs.isDisposed());
 
-        verify(NbpObserver, never()).onNext(anyString());
+        verify(observer, never()).onNext(anyString());
         // even though onError is called we take(0) so shouldn't see it
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onComplete();
-        verifyNoMoreInteractions(NbpObserver);
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onComplete();
+        verifyNoMoreInteractions(observer);
     }
 
     @Test
@@ -161,12 +160,12 @@ public class ObservableTakeTest {
         TestObservableFunc f = new TestObservableFunc("one", "two", "three");
         Observable<String> w = Observable.unsafeCreate(f);
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
-        Observable<String> take = w.take(1);
-        take.subscribe(NbpObserver);
+        Observer<String> observer = TestHelper.mockObserver();
 
-        // wait for the NbpObservable to complete
+        Observable<String> take = w.take(1);
+        take.subscribe(observer);
+
+        // wait for the Observable to complete
         try {
             f.t.join();
         } catch (Throwable e) {
@@ -175,14 +174,14 @@ public class ObservableTakeTest {
         }
 
         System.out.println("TestObservable thread finished");
-        verify(NbpObserver).onSubscribe((Disposable)notNull());
-        verify(NbpObserver, times(1)).onNext("one");
-        verify(NbpObserver, never()).onNext("two");
-        verify(NbpObserver, never()).onNext("three");
-        verify(NbpObserver, times(1)).onComplete();
+        verify(observer).onSubscribe((Disposable)notNull());
+        verify(observer, times(1)).onNext("one");
+        verify(observer, never()).onNext("two");
+        verify(observer, never()).onNext("three");
+        verify(observer, times(1)).onComplete();
         // FIXME no longer assertable
 //        verify(s, times(1)).unsubscribe();
-        verifyNoMoreInteractions(NbpObserver);
+        verifyNoMoreInteractions(observer);
     }
 
     @Test(timeout = 2000)
@@ -228,18 +227,18 @@ public class ObservableTakeTest {
         assertEquals(1, count.get());
     }
 
-    private static class TestObservableFunc implements ObservableSource<String> {
+    static class TestObservableFunc implements ObservableSource<String> {
 
         final String[] values;
-        Thread t = null;
+        Thread t;
 
-        public TestObservableFunc(String... values) {
+        TestObservableFunc(String... values) {
             this.values = values;
         }
 
         @Override
-        public void subscribe(final Observer<? super String> NbpObserver) {
-            NbpObserver.onSubscribe(Disposables.empty());
+        public void subscribe(final Observer<? super String> observer) {
+            observer.onSubscribe(Disposables.empty());
             System.out.println("TestObservable subscribed to ...");
             t = new Thread(new Runnable() {
 
@@ -249,9 +248,9 @@ public class ObservableTakeTest {
                         System.out.println("running TestObservable thread");
                         for (String s : values) {
                             System.out.println("TestObservable onNext: " + s);
-                            NbpObserver.onNext(s);
+                            observer.onNext(s);
                         }
-                        NbpObserver.onComplete();
+                        observer.onComplete();
                     } catch (Throwable e) {
                         throw new RuntimeException(e);
                     }
@@ -278,23 +277,23 @@ public class ObservableTakeTest {
         }
 
     });
-    
+
     @Test(timeout = 2000)
     public void testTakeObserveOn() {
         Observer<Object> o = TestHelper.mockObserver();
         TestObserver<Object> ts = new TestObserver<Object>(o);
-        
+
         INFINITE_OBSERVABLE
         .observeOn(Schedulers.newThread()).take(1).subscribe(ts);
         ts.awaitTerminalEvent();
         ts.assertNoErrors();
-        
+
         verify(o).onNext(1L);
         verify(o, never()).onNext(2L);
         verify(o).onComplete();
         verify(o, never()).onError(any(Throwable.class));
     }
-    
+
     @Test
     public void testInterrupt() throws InterruptedException {
         final AtomicReference<Object> exception = new AtomicReference<Object>();
@@ -319,42 +318,75 @@ public class ObservableTakeTest {
         latch.await();
         assertNull(exception.get());
     }
-    
+
     @Test
     public void takeFinalValueThrows() {
         Observable<Integer> source = Observable.just(1).take(1);
-        
+
         TestObserver<Integer> ts = new TestObserver<Integer>() {
             @Override
             public void onNext(Integer t) {
                 throw new TestException();
             }
         };
-        
+
         source.safeSubscribe(ts);
-        
+
         ts.assertNoValues();
         ts.assertError(TestException.class);
         ts.assertNotComplete();
     }
-    
+
     @Test
     public void testReentrantTake() {
         final PublishSubject<Integer> source = PublishSubject.create();
-        
+
         TestObserver<Integer> ts = new TestObserver<Integer>();
-        
+
         source.take(1).doOnNext(new Consumer<Integer>() {
             @Override
             public void accept(Integer v) {
                 source.onNext(2);
             }
         }).subscribe(ts);
-        
+
         source.onNext(1);
-        
+
         ts.assertValue(1);
         ts.assertNoErrors();
         ts.assertComplete();
+    }
+
+    @Test
+    public void takeNegative() {
+        try {
+            Observable.just(1).take(-99);
+            fail("Should have thrown");
+        } catch (IllegalArgumentException ex) {
+            assertEquals("count >= 0 required but it was -99", ex.getMessage());
+        }
+    }
+
+    @Test
+    public void takeZero() {
+        Observable.just(1)
+        .take(0)
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishSubject.create().take(2));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.take(2);
+            }
+        });
     }
 }

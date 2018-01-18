@@ -1,18 +1,18 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
  */
 
 /*
- * The code was inspired by the similarly named JCTools class: 
+ * The code was inspired by the similarly named JCTools class:
  * https://github.com/JCTools/JCTools/blob/master/jctools-core/src/main/java/org/jctools/queues/atomic
  */
 
@@ -20,7 +20,8 @@ package io.reactivex.internal.queue;
 
 import java.util.concurrent.atomic.*;
 
-import io.reactivex.internal.fuseable.SimpleQueue;
+import io.reactivex.annotations.Nullable;
+import io.reactivex.internal.fuseable.SimplePlainQueue;
 import io.reactivex.internal.util.Pow2;
 
 /**
@@ -28,10 +29,10 @@ import io.reactivex.internal.util.Pow2;
  * than the producer.
  * @param <T> the contained value type
  */
-public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
+public final class SpscLinkedArrayQueue<T> implements SimplePlainQueue<T> {
     static final int MAX_LOOK_AHEAD_STEP = Integer.getInteger("jctools.spsc.max.lookahead.step", 4096);
     final AtomicLong producerIndex = new AtomicLong();
-    
+
     int producerLookAheadStep;
     long producerLookAhead;
 
@@ -45,7 +46,7 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
     private static final Object HAS_NEXT = new Object();
 
     public SpscLinkedArrayQueue(final int bufferSize) {
-        int p2capacity = Pow2.roundToPowerOfTwo(bufferSize);
+        int p2capacity = Pow2.roundToPowerOfTwo(Math.max(8, bufferSize));
         int mask = p2capacity - 1;
         AtomicReferenceArray<Object> buffer = new AtomicReferenceArray<Object>(p2capacity + 1);
         producerBuffer = buffer;
@@ -64,6 +65,9 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
      */
     @Override
     public boolean offer(final T e) {
+        if (null == e) {
+            throw new NullPointerException("Null is not a valid element");
+        }
         // local load of field to avoid repeated loads after volatile reads
         final AtomicReferenceArray<Object> buffer = producerBuffer;
         final long index = lpProducerIndex();
@@ -75,7 +79,7 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
             final int lookAheadStep = producerLookAheadStep;
             // go around the buffer or resize if full (unless we hit max capacity)
             int lookAheadElementOffset = calcWrappedOffset(index + lookAheadStep, mask);
-            if (null == lvElement(buffer, lookAheadElementOffset)) {// LoadLoad
+            if (null == lvElement(buffer, lookAheadElementOffset)) { // LoadLoad
                 producerLookAhead = index + lookAheadStep - 1; // joy, there's plenty of room
                 return writeToQueue(buffer, e, index, offset);
             } else if (null == lvElement(buffer, calcWrappedOffset(index + 1, mask))) { // buffer is not full
@@ -110,14 +114,18 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
         soElement(curr, calcDirectOffset(curr.length() - 1), next);
     }
     @SuppressWarnings("unchecked")
-    private AtomicReferenceArray<Object> lvNext(AtomicReferenceArray<Object> curr) {
-        return (AtomicReferenceArray<Object>)lvElement(curr, calcDirectOffset(curr.length() - 1));
+    private AtomicReferenceArray<Object> lvNextBufferAndUnlink(AtomicReferenceArray<Object> curr, int nextIndex) {
+        int nextOffset = calcDirectOffset(nextIndex);
+        AtomicReferenceArray<Object> nextBuffer = (AtomicReferenceArray<Object>)lvElement(curr, nextOffset);
+        soElement(curr, nextOffset, null); // Avoid GC nepotism
+        return nextBuffer;
     }
     /**
      * {@inheritDoc}
      * <p>
      * This implementation is correct for single consumer thread use only.
      */
+    @Nullable
     @SuppressWarnings("unchecked")
     @Override
     public T poll() {
@@ -133,7 +141,7 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
             soConsumerIndex(index + 1);// this ensures correctness on 32bit platforms
             return (T) e;
         } else if (isNextBuffer) {
-            return newBufferPoll(lvNext(buffer), index, mask);
+            return newBufferPoll(lvNextBufferAndUnlink(buffer, mask + 1), index, mask);
         }
 
         return null;
@@ -144,13 +152,11 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
         consumerBuffer = nextBuffer;
         final int offsetInNew = calcWrappedOffset(index, mask);
         final T n = (T) lvElement(nextBuffer, offsetInNew);// LoadLoad
-        if (null == n) {
-            return null;
-        } else {
+        if (null != n) {
             soElement(nextBuffer, offsetInNew, null);// StoreStore
             soConsumerIndex(index + 1);// this ensures correctness on 32bit platforms
-            return n;
         }
+        return n;
     }
 
     @SuppressWarnings("unchecked")
@@ -161,12 +167,12 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
         final int offset = calcWrappedOffset(index, mask);
         final Object e = lvElement(buffer, offset);// LoadLoad
         if (e == HAS_NEXT) {
-            return newBufferPeek(lvNext(buffer), index, mask);
+            return newBufferPeek(lvNextBufferAndUnlink(buffer, mask + 1), index, mask);
         }
 
         return (T) e;
     }
-    
+
     @SuppressWarnings("unchecked")
     private T newBufferPeek(AtomicReferenceArray<Object> nextBuffer, final long index, final int mask) {
         consumerBuffer = nextBuffer;
@@ -175,7 +181,7 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
     }
     @Override
     public void clear() {
-        while (poll() != null || !isEmpty()); // NOPMD
+        while (poll() != null || !isEmpty()) { } // NOPMD
     }
 
     public int size() {
@@ -195,7 +201,7 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
             }
         }
     }
-    
+
     @Override
     public boolean isEmpty() {
         return lvProducerIndex() == lvConsumerIndex();
@@ -255,9 +261,9 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
         final AtomicReferenceArray<Object> buffer = producerBuffer;
         final long p = lvProducerIndex();
         final int m = producerMask;
-        
+
         int pi = calcWrappedOffset(p + 2, m);
-        
+
         if (null == lvElement(buffer, pi)) {
             pi = calcWrappedOffset(p, m);
             soElement(buffer, pi + 1, second);
@@ -267,12 +273,12 @@ public final class SpscLinkedArrayQueue<T> implements SimpleQueue<T> {
             final int capacity = buffer.length();
             final AtomicReferenceArray<Object> newBuffer = new AtomicReferenceArray<Object>(capacity);
             producerBuffer = newBuffer;
-            
+
             pi = calcWrappedOffset(p, m);
             soElement(newBuffer, pi + 1, second);// StoreStore
             soElement(newBuffer, pi, first);
             soNext(buffer, newBuffer);
-            
+
             soElement(buffer, pi, HAS_NEXT); // new buffer is visible after element is
 
             soProducerIndex(p + 2);// this ensures correctness on 32bit platforms

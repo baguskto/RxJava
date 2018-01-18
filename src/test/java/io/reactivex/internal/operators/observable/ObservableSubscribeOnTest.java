@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -18,6 +18,7 @@ import static org.junit.Assert.assertEquals;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.reactivex.annotations.NonNull;
 import org.junit.*;
 
 import io.reactivex.*;
@@ -34,14 +35,14 @@ public class ObservableSubscribeOnTest {
         final CountDownLatch latch = new CountDownLatch(1);
         final CountDownLatch doneLatch = new CountDownLatch(1);
 
-        TestObserver<Integer> NbpObserver = new TestObserver<Integer>();
+        TestObserver<Integer> to = new TestObserver<Integer>();
 
         Observable
         .unsafeCreate(new ObservableSource<Integer>() {
             @Override
             public void subscribe(
-                    final Observer<? super Integer> NbpSubscriber) {
-                NbpSubscriber.onSubscribe(Disposables.empty());
+                    final Observer<? super Integer> observer) {
+                observer.onSubscribe(Disposables.empty());
                 scheduled.countDown();
                 try {
                     try {
@@ -51,27 +52,27 @@ public class ObservableSubscribeOnTest {
                         // ... but we'll pretend we are like many Observables that ignore interrupts
                     }
 
-                    NbpSubscriber.onComplete();
+                    observer.onComplete();
                 } catch (Throwable e) {
-                    NbpSubscriber.onError(e);
+                    observer.onError(e);
                 } finally {
                     doneLatch.countDown();
                 }
             }
-        }).subscribeOn(Schedulers.computation()).subscribe(NbpObserver);
+        }).subscribeOn(Schedulers.computation()).subscribe(to);
 
         // wait for scheduling
         scheduled.await();
         // trigger unsubscribe
-        NbpObserver.dispose();
+        to.dispose();
         latch.countDown();
         doneLatch.await();
-        NbpObserver.assertNoErrors();
-        NbpObserver.assertComplete();
+        to.assertNoErrors();
+        to.assertComplete();
     }
 
     @Test
-    @Ignore("ObservableConsumable.subscribe can't throw")
+    @Ignore("ObservableSource.subscribe can't throw")
     public void testThrownErrorHandling() {
         TestObserver<String> ts = new TestObserver<String>();
         Observable.unsafeCreate(new ObservableSource<String>() {
@@ -117,6 +118,7 @@ public class ObservableSubscribeOnTest {
             this.unit = unit;
         }
 
+        @NonNull
         @Override
         public Worker createWorker() {
             return new SlowInner(actual.createWorker());
@@ -140,13 +142,15 @@ public class ObservableSubscribeOnTest {
                 return actualInner.isDisposed();
             }
 
+            @NonNull
             @Override
-            public Disposable schedule(final Runnable action) {
+            public Disposable schedule(@NonNull final Runnable action) {
                 return actualInner.schedule(action, delay, unit);
             }
 
+            @NonNull
             @Override
-            public Disposable schedule(final Runnable action, final long delayTime, final TimeUnit delayUnit) {
+            public Disposable schedule(@NonNull final Runnable action, final long delayTime, @NonNull final TimeUnit delayUnit) {
                 TimeUnit common = delayUnit.compareTo(unit) < 0 ? delayUnit : unit;
                 long t = common.convert(delayTime, delayUnit) + common.convert(delay, unit);
                 return actualInner.schedule(action, t, common);
@@ -180,24 +184,28 @@ public class ObservableSubscribeOnTest {
         ts.assertValues(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
         assertEquals(10, count.get());
     }
-    
+
     @Test
     public void cancelBeforeActualSubscribe() {
         TestScheduler test = new TestScheduler();
-        
+
         TestObserver<Integer> to = new TestObserver<Integer>();
-        
+
         Observable.just(1).hide()
                 .subscribeOn(test).subscribe(to);
-        
+
         to.dispose();
-        
+
         test.advanceTimeBy(1, TimeUnit.SECONDS);
-        
+
         to
         .assertSubscribed()
         .assertNoValues()
         .assertNotTerminated();
     }
-    
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.just(1).subscribeOn(Schedulers.single()));
+    }
 }

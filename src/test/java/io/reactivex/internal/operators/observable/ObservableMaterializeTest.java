@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -24,7 +24,7 @@ import io.reactivex.*;
 import io.reactivex.Observable;
 import io.reactivex.Observer;
 import io.reactivex.disposables.Disposables;
-import io.reactivex.functions.Consumer;
+import io.reactivex.functions.*;
 import io.reactivex.observers.*;
 
 public class ObservableMaterializeTest {
@@ -47,15 +47,15 @@ public class ObservableMaterializeTest {
         }
 
         assertFalse(observer.onError);
-        assertTrue(observer.onCompleted);
+        assertTrue(observer.onComplete);
         assertEquals(3, observer.notifications.size());
-        
+
         assertTrue(observer.notifications.get(0).isOnNext());
         assertEquals("one", observer.notifications.get(0).getValue());
-        
+
         assertTrue(observer.notifications.get(1).isOnNext());
         assertEquals("two", observer.notifications.get(1).getValue());
-        
+
         assertTrue(observer.notifications.get(2).isOnError());
         assertEquals(NullPointerException.class, observer.notifications.get(2).getError().getClass());
     }
@@ -75,14 +75,14 @@ public class ObservableMaterializeTest {
         }
 
         assertFalse(observer.onError);
-        assertTrue(observer.onCompleted);
+        assertTrue(observer.onComplete);
         assertEquals(4, observer.notifications.size());
         assertTrue(observer.notifications.get(0).isOnNext());
         assertEquals("one", observer.notifications.get(0).getValue());
 
         assertTrue(observer.notifications.get(1).isOnNext());
         assertEquals("two", observer.notifications.get(1).getValue());
-        
+
         assertTrue(observer.notifications.get(2).isOnNext());
         assertEquals("three", observer.notifications.get(2).getValue());
 
@@ -113,16 +113,16 @@ public class ObservableMaterializeTest {
         ts.assertNoValues();
         ts.assertTerminated();
     }
-    
+
     private static class TestLocalObserver extends DefaultObserver<Notification<String>> {
 
-        boolean onCompleted = false;
-        boolean onError = false;
+        boolean onComplete;
+        boolean onError;
         List<Notification<String>> notifications = new Vector<Notification<String>>();
 
         @Override
         public void onComplete() {
-            this.onCompleted = true;
+            this.onComplete = true;
         }
 
         @Override
@@ -148,8 +148,8 @@ public class ObservableMaterializeTest {
         volatile Thread t;
 
         @Override
-        public void subscribe(final Observer<? super String> NbpObserver) {
-            NbpObserver.onSubscribe(Disposables.empty());
+        public void subscribe(final Observer<? super String> observer) {
+            observer.onSubscribe(Disposables.empty());
             t = new Thread(new Runnable() {
 
                 @Override
@@ -162,18 +162,33 @@ public class ObservableMaterializeTest {
                             } catch (Throwable e) {
 
                             }
-                            NbpObserver.onError(new NullPointerException());
+                            observer.onError(new NullPointerException());
                             return;
                         } else {
-                            NbpObserver.onNext(s);
+                            observer.onNext(s);
                         }
                     }
                     System.out.println("subscription complete");
-                    NbpObserver.onComplete();
+                    observer.onComplete();
                 }
 
             });
             t.start();
         }
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.just(1).materialize());
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Notification<Object>>>() {
+            @Override
+            public ObservableSource<Notification<Object>> apply(Observable<Object> o) throws Exception {
+                return o.materialize();
+            }
+        });
     }
 }

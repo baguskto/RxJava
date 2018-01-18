@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,96 +13,307 @@
 
 package io.reactivex.subjects;
 
-import java.lang.reflect.Array;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
-import io.reactivex.*;
-import io.reactivex.disposables.*;
-import io.reactivex.internal.util.NotificationLite;
+import io.reactivex.Observer;
+import io.reactivex.annotations.CheckReturnValue;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.internal.functions.ObjectHelper;
+import io.reactivex.internal.observers.DeferredScalarDisposable;
 import io.reactivex.plugins.RxJavaPlugins;
 
 /**
- * An NbpSubject that emits the very last value followed by a completion event or the received error to NbpSubscribers.
- *
- * <p>The implementation of onXXX methods are technically thread-safe but non-serialized calls
- * to them may lead to undefined state in the currently subscribed NbpSubscribers.
+ * A Subject that emits the very last value followed by a completion event or the received error to Observers.
+ * <p>
+ * This subject does not have a public constructor by design; a new empty instance of this
+ * {@code AsyncSubject} can be created via the {@link #create()} method.
+ * <p>
+ * Since a {@code Subject} is conceptionally derived from the {@code Processor} type in the Reactive Streams specification,
+ * {@code null}s are not allowed (<a href="https://github.com/reactive-streams/reactive-streams-jvm#2.13">Rule 2.13</a>)
+ * as parameters to {@link #onNext(Object)} and {@link #onError(Throwable)}. Such calls will result in a
+ * {@link NullPointerException} being thrown and the subject's state is not changed.
+ * <p>
+ * Since an {@code AsyncSubject} is an {@link io.reactivex.Observable}, it does not support backpressure.
+ * <p>
+ * When this {@code AsyncSubject} is terminated via {@link #onError(Throwable)}, the
+ * last observed item (if any) is cleared and late {@link io.reactivex.Observer}s only receive
+ * the {@code onError} event.
+ * <p>
+ * The {@code AsyncSubject} caches the latest item internally and it emits this item only when {@code onComplete} is called.
+ * Therefore, it is not recommended to use this {@code Subject} with infinite or never-completing sources.
+ * <p>
+ * Even though {@code AsyncSubject} implements the {@code Observer} interface, calling
+ * {@code onSubscribe} is not required (<a href="https://github.com/reactive-streams/reactive-streams-jvm#2.12">Rule 2.12</a>)
+ * if the subject is used as a standalone source. However, calling {@code onSubscribe}
+ * after the {@code AsyncSubject} reached its terminal state will result in the
+ * given {@code Disposable} being disposed immediately.
+ * <p>
+ * Calling {@link #onNext(Object)}, {@link #onError(Throwable)} and {@link #onComplete()}
+ * is required to be serialized (called from the same thread or called non-overlappingly from different threads
+ * through external means of serialization). The {@link #toSerialized()} method available to all {@code Subject}s
+ * provides such serialization and also protects against reentrance (i.e., when a downstream {@code Observer}
+ * consuming this subject also wants to call {@link #onNext(Object)} on this subject recursively).
+ * The implementation of onXXX methods are technically thread-safe but non-serialized calls
+ * to them may lead to undefined state in the currently subscribed Observers.
+ * <p>
+ * This {@code AsyncSubject} supports the standard state-peeking methods {@link #hasComplete()}, {@link #hasThrowable()},
+ * {@link #getThrowable()} and {@link #hasObservers()} as well as means to read the very last observed value -
+ * after this {@code AsyncSubject} has been completed - in a non-blocking and thread-safe
+ * manner via {@link #hasValue()}, {@link #getValue()}, {@link #getValues()} or {@link #getValues(Object[])}.
+ * <dl>
+ *  <dt><b>Scheduler:</b></dt>
+ *  <dd>{@code AsyncSubject} does not operate by default on a particular {@link io.reactivex.Scheduler} and
+ *  the {@code Observer}s get notified on the thread where the terminating {@code onError} or {@code onComplete}
+ *  methods were invoked.</dd>
+ *  <dt><b>Error handling:</b></dt>
+ *  <dd>When the {@link #onError(Throwable)} is called, the {@code AsyncSubject} enters into a terminal state
+ *  and emits the same {@code Throwable} instance to the last set of {@code Observer}s. During this emission,
+ *  if one or more {@code Observer}s dispose their respective {@code Disposable}s, the
+ *  {@code Throwable} is delivered to the global error handler via
+ *  {@link io.reactivex.plugins.RxJavaPlugins#onError(Throwable)} (multiple times if multiple {@code Observer}s
+ *  cancel at once).
+ *  If there were no {@code Observer}s subscribed to this {@code AsyncSubject} when the {@code onError()}
+ *  was called, the global error handler is not invoked.
+ *  </dd>
+ * </dl>
+ * <p>
+ * Example usage:
+ * <pre><code>
+ * AsyncSubject&lt;Object&gt; subject = AsyncSubject.create();
  * 
- * <p>Due to the nature Observables are constructed, the NbpAsyncSubject can't be instantiated through
- * {@code new} but must be created via the {@link #create()} method.
+ * TestObserver&lt;Object&gt; to1 = subject.test();
+ * 
+ * to1.assertEmpty();
+ * 
+ * subject.onNext(1);
+ * 
+ * // AsyncSubject only emits when onComplete was called.
+ * to1.assertEmpty();
  *
+ * subject.onNext(2);
+ * subject.onComplete();
+ * 
+ * // onComplete triggers the emission of the last cached item and the onComplete event.
+ * to1.assertResult(2);
+ * 
+ * TestObserver&lt;Object&gt; to2 = subject.test();
+ * 
+ * // late Observers receive the last cached item too
+ * to2.assertResult(2);
+ * </code></pre>
  * @param <T> the value type
  */
-
 public final class AsyncSubject<T> extends Subject<T> {
-    final State<T> state;
-    
+
+    @SuppressWarnings("rawtypes")
+    static final AsyncDisposable[] EMPTY = new AsyncDisposable[0];
+
+    @SuppressWarnings("rawtypes")
+    static final AsyncDisposable[] TERMINATED = new AsyncDisposable[0];
+
+    final AtomicReference<AsyncDisposable<T>[]> subscribers;
+
+    /** Write before updating subscribers, read after reading subscribers as TERMINATED. */
+    Throwable error;
+
+    /** Write before updating subscribers, read after reading subscribers as TERMINATED. */
+    T value;
+
+    /**
+     * Creates a new AsyncProcessor.
+     * @param <T> the value type to be received and emitted
+     * @return the new AsyncProcessor instance
+     */
+    @CheckReturnValue
     public static <T> AsyncSubject<T> create() {
         return new AsyncSubject<T>();
     }
-    
-    protected AsyncSubject() {
-        this.state = new State<T>();
+
+    /**
+     * Constructs an AsyncSubject.
+     * @since 2.0
+     */
+    @SuppressWarnings("unchecked")
+    AsyncSubject() {
+        this.subscribers = new AtomicReference<AsyncDisposable<T>[]>(EMPTY);
     }
-    
+
     @Override
-    protected void subscribeActual(Observer<? super T> observer) {
-        state.subscribe(observer);
-    }
-    
-    @Override
-    public void onSubscribe(Disposable d) {
-        if (state.subscribers.get() == State.TERMINATED) {
-            d.dispose();
+    public void onSubscribe(Disposable s) {
+        if (subscribers.get() == TERMINATED) {
+            s.dispose();
         }
     }
-    
+
     @Override
-    public void onNext(T value) {
-        state.onNext(value);
+    public void onNext(T t) {
+        ObjectHelper.requireNonNull(t, "onNext called with null. Null values are generally not allowed in 2.x operators and sources.");
+        if (subscribers.get() == TERMINATED) {
+            return;
+        }
+        value = t;
     }
-    
+
+    @SuppressWarnings("unchecked")
     @Override
-    public void onError(Throwable e) {
-        state.onError(e);
+    public void onError(Throwable t) {
+        ObjectHelper.requireNonNull(t, "onError called with null. Null values are generally not allowed in 2.x operators and sources.");
+        if (subscribers.get() == TERMINATED) {
+            RxJavaPlugins.onError(t);
+            return;
+        }
+        value = null;
+        error = t;
+        for (AsyncDisposable<T> as : subscribers.getAndSet(TERMINATED)) {
+            as.onError(t);
+        }
     }
-    
+
+    @SuppressWarnings("unchecked")
     @Override
     public void onComplete() {
-        state.onComplete();
+        if (subscribers.get() == TERMINATED) {
+            return;
+        }
+        T v = value;
+        AsyncDisposable<T>[] array = subscribers.getAndSet(TERMINATED);
+        if (v == null) {
+            for (AsyncDisposable<T> as : array) {
+                as.onComplete();
+            }
+        } else {
+            for (AsyncDisposable<T> as : array) {
+                as.complete(v);
+            }
+        }
     }
-    
+
     @Override
     public boolean hasObservers() {
-        return state.subscribers.get().length != 0;
+        return subscribers.get().length != 0;
     }
-    
+
+    @Override
+    public boolean hasThrowable() {
+        return subscribers.get() == TERMINATED && error != null;
+    }
+
+    @Override
+    public boolean hasComplete() {
+        return subscribers.get() == TERMINATED && error == null;
+    }
+
     @Override
     public Throwable getThrowable() {
-        Object o = state.get();
-        if (NotificationLite.isError(o)) {
-            return NotificationLite.getError(o);
-        }
-        return null;
+        return subscribers.get() == TERMINATED ? error : null;
     }
-    
+
+    @Override
+    protected void subscribeActual(Observer<? super T> s) {
+        AsyncDisposable<T> as = new AsyncDisposable<T>(s, this);
+        s.onSubscribe(as);
+        if (add(as)) {
+            if (as.isDisposed()) {
+                remove(as);
+            }
+        } else {
+            Throwable ex = error;
+            if (ex != null) {
+                s.onError(ex);
+            } else {
+                T v = value;
+                if (v != null) {
+                    as.complete(v);
+                } else {
+                    as.onComplete();
+                }
+            }
+        }
+    }
+
+    /**
+     * Tries to add the given subscriber to the subscribers array atomically
+     * or returns false if the subject has terminated.
+     * @param ps the subscriber to add
+     * @return true if successful, false if the subject has terminated
+     */
+    boolean add(AsyncDisposable<T> ps) {
+        for (;;) {
+            AsyncDisposable<T>[] a = subscribers.get();
+            if (a == TERMINATED) {
+                return false;
+            }
+
+            int n = a.length;
+            @SuppressWarnings("unchecked")
+            AsyncDisposable<T>[] b = new AsyncDisposable[n + 1];
+            System.arraycopy(a, 0, b, 0, n);
+            b[n] = ps;
+
+            if (subscribers.compareAndSet(a, b)) {
+                return true;
+            }
+        }
+    }
+
+    /**
+     * Atomically removes the given subscriber if it is subscribed to the subject.
+     * @param ps the subject to remove
+     */
+    @SuppressWarnings("unchecked")
+    void remove(AsyncDisposable<T> ps) {
+        for (;;) {
+            AsyncDisposable<T>[] a = subscribers.get();
+            int n = a.length;
+            if (n == 0) {
+                return;
+            }
+
+            int j = -1;
+            for (int i = 0; i < n; i++) {
+                if (a[i] == ps) {
+                    j = i;
+                    break;
+                }
+            }
+
+            if (j < 0) {
+                return;
+            }
+
+            AsyncDisposable<T>[] b;
+
+            if (n == 1) {
+                b = EMPTY;
+            } else {
+                b = new AsyncDisposable[n - 1];
+                System.arraycopy(a, 0, b, 0, j);
+                System.arraycopy(a, j + 1, b, j, n - j - 1);
+            }
+            if (subscribers.compareAndSet(a, b)) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Returns true if the subject has any value.
+     * <p>The method is thread-safe.
+     * @return true if the subject has any value
+     */
+    public boolean hasValue() {
+        return subscribers.get() == TERMINATED && value != null;
+    }
+
     /**
      * Returns a single value the Subject currently has or null if no such value exists.
      * <p>The method is thread-safe.
      * @return a single value the Subject currently has or null if no such value exists
      */
     public T getValue() {
-        Object o = state.get();
-        if (o != null) {
-            if (NotificationLite.isComplete(o) || NotificationLite.isError(o)) {
-                return null;
-            }
-            return NotificationLite.getValue(o);
-        }
-        return null;
+        return subscribers.get() == TERMINATED ? value : null;
     }
-    
-    /** An empty array to avoid allocation in getValues(). */
-    private static final Object[] EMPTY = new Object[0];
 
     /**
      * Returns an Object array containing snapshot all values of the Subject.
@@ -110,16 +321,10 @@ public final class AsyncSubject<T> extends Subject<T> {
      * @return the array containing the snapshot of all values of the Subject
      */
     public Object[] getValues() {
-        @SuppressWarnings("unchecked")
-        T[] a = (T[])EMPTY;
-        T[] b = getValues(a);
-        if (b == EMPTY) {
-            return new Object[0];
-        }
-        return b;
-            
+        T v = getValue();
+        return v != null ? new Object[] { v } : new Object[0];
     }
-    
+
     /**
      * Returns a typed array containing a snapshot of all values of the Subject.
      * <p>The method follows the conventions of Collection.toArray by setting the array element
@@ -128,216 +333,52 @@ public final class AsyncSubject<T> extends Subject<T> {
      * @param array the target array to copy values into if it fits
      * @return the given array if the values fit into it or a new array containing all values
      */
-    @SuppressWarnings("unchecked")
     public T[] getValues(T[] array) {
-        Object o = state.get();
-        if (o != null) {
-            if (NotificationLite.isComplete(o) || NotificationLite.isError(o)) {
-                if (array.length != 0) {
-                    array[0] = null;
-                }
-            } else {
-                T v = NotificationLite.getValue(o);
-                if (array.length != 0) {
-                    array[0] = v;
-                    if (array.length != 1) {
-                        array[1] = null;
-                    }
-                } else {
-                    array = (T[])Array.newInstance(array.getClass().getComponentType(), 1);
-                    array[0] = v;
-                }
-            }
-        } else {
+        T v = getValue();
+        if (v == null) {
             if (array.length != 0) {
                 array[0] = null;
             }
+            return array;
+        }
+        if (array.length == 0) {
+            array = Arrays.copyOf(array, 1);
+        }
+        array[0] = v;
+        if (array.length != 1) {
+            array[1] = null;
         }
         return array;
     }
-    
-    @Override
-    public boolean hasComplete() {
-        return state.subscribers.get() == State.TERMINATED && !NotificationLite.isError(state.get());
-    }
-    
-    @Override
-    public boolean hasThrowable() {
-        return NotificationLite.isError(state.get());
-    }
-    
-    /**
-     * Returns true if the subject has any value.
-     * <p>The method is thread-safe.
-     * @return true if the subject has any value
-     */
-    public boolean hasValue() {
-        Object o = state.get();
-        return o != null && !NotificationLite.isComplete(o) && !NotificationLite.isError(o);
-    }
-    
-    static final class State<T> extends AtomicReference<Object> implements ObservableSource<T>, Observer<T> {
-        /** */
-        private static final long serialVersionUID = 4876574210612691772L;
 
-        final AtomicReference<Observer<? super T>[]> subscribers;
-        
-        @SuppressWarnings("rawtypes")
-        static final Observer[] EMPTY = new Observer[0];
-        @SuppressWarnings("rawtypes")
-        static final Observer[] TERMINATED = new Observer[0];
+    static final class AsyncDisposable<T> extends DeferredScalarDisposable<T> {
+        private static final long serialVersionUID = 5629876084736248016L;
 
-        boolean done;
-        
-        @SuppressWarnings("unchecked")
-        public State() {
-            subscribers = new AtomicReference<Observer<? super T>[]>(EMPTY);
+        final AsyncSubject<T> parent;
+
+        AsyncDisposable(Observer<? super T> actual, AsyncSubject<T> parent) {
+            super(actual);
+            this.parent = parent;
         }
-        
-        boolean add(Observer<? super T> s) {
-            for (;;) {
-                Observer<? super T>[] a = subscribers.get();
-                if (a == TERMINATED) {
-                    return false;
-                }
-                int n = a.length;
-                
-                @SuppressWarnings("unchecked")
-                Observer<? super T>[] b = new Observer[n + 1];
-                System.arraycopy(a, 0, b, 0, n);
-                b[n] = s;
-                
-                if (subscribers.compareAndSet(a, b)) {
-                    return true;
-                }
+
+        @Override
+        public void dispose() {
+            if (super.tryDispose()) {
+                parent.remove(this);
             }
         }
-        
-        @SuppressWarnings("unchecked")
-        void remove(Observer<? super T> s) {
-            for (;;) {
-                Observer<? super T>[] a = subscribers.get();
-                if (a == TERMINATED || a == EMPTY) {
-                    return;
-                }
-                int n = a.length;
-                int j = -1;
-                for (int i = 0; i < n; i++) {
-                    Observer<? super T> e = a[i];
-                    if (e.equals(s)) {
-                        j = i;
-                        break;
-                    }
-                }
-                if (j < 0) {
-                    return;
-                }
-                Observer<? super T>[] b;
-                if (n == 1) {
-                    b = EMPTY;
-                } else {
-                    b = new Observer[n - 1];
-                    System.arraycopy(a, 0, b, 0, j);
-                    System.arraycopy(a, j + 1, b, j, n - j - 1);
-                }
-                if (subscribers.compareAndSet(a, b)) {
-                    return;
-                }
+
+        void onComplete() {
+            if (!isDisposed()) {
+                actual.onComplete();
             }
         }
-        
-        @SuppressWarnings("unchecked")
-        Observer<? super T>[] terminate(Object notification) {
-            if (compareAndSet(get(), notification)) {
-                Observer<? super T>[] a = subscribers.get();
-                if (a != TERMINATED) {
-                    return subscribers.getAndSet(TERMINATED);
-                }
-            }
-            return TERMINATED;
-        }
-        
-        void emit(Observer<? super T> t, Object v) {
-            if (NotificationLite.isComplete(v)) {
-                t.onComplete();
-            } else
-            if (NotificationLite.isError(v)) {
-                t.onError(NotificationLite.getError(v));
+
+        void onError(Throwable t) {
+            if (isDisposed()) {
+                RxJavaPlugins.onError(t);
             } else {
-                t.onNext(NotificationLite.<T>getValue(v));
-                t.onComplete();
-            }
-        }
-        
-        @Override
-        public void subscribe(final Observer<? super T> t) {
-            Disposable d = Disposables.from(new Runnable() {
-                @Override
-                public void run() {
-                    remove(t);
-                }
-            });
-            t.onSubscribe(d);
-            if (add(t)) {
-                if (d.isDisposed()) {
-                    remove(t);
-                }
-                return;
-            }
-            Object v = get();
-            emit(t, v);
-        }
-        
-        @Override
-        public void onSubscribe(Disposable d) {
-            if (done) {
-                d.dispose();
-            }
-        }
-        
-        @Override
-        public void onNext(T value) {
-            if (done) {
-                return;
-            }
-            if (value == null) {
-                onError(new NullPointerException());
-                return;
-            }
-            lazySet(value);
-        }
-        
-        @Override
-        public void onError(Throwable e) {
-            if (done) {
-                RxJavaPlugins.onError(e);
-                return;
-            }
-            done = true;
-            if (e == null) {
-                e = new NullPointerException();
-            }
-            for (Observer<? super T> v : terminate(NotificationLite.error(e))) {
-                v.onError(e);
-            }
-        }
-        
-        @Override
-        public void onComplete() {
-            if (done) {
-                return;
-            }
-            done = true;
-            T value = NotificationLite.getValue(get());
-            if (value == null) {
-                for (Observer<? super T> v : terminate(NotificationLite.complete())) {
-                    v.onComplete();
-                }
-            } else {
-                for (Observer<? super T> v : terminate(NotificationLite.next(value))) {
-                    v.onNext(value);
-                    v.onComplete();
-                }
+                actual.onError(t);
             }
         }
     }

@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -17,142 +17,87 @@ import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.reactivex.*;
-import io.reactivex.disposables.*;
+import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.exceptions.Exceptions;
-import io.reactivex.internal.fuseable.SimpleQueue;
-import io.reactivex.internal.queue.MpscLinkedQueue;
+import io.reactivex.internal.functions.ObjectHelper;
+import io.reactivex.internal.operators.completable.CompletableMergeDelayErrorArray.MergeInnerCompletableObserver;
+import io.reactivex.internal.util.AtomicThrowable;
 
 public final class CompletableMergeDelayErrorIterable extends Completable {
+
     final Iterable<? extends CompletableSource> sources;
-    
+
     public CompletableMergeDelayErrorIterable(Iterable<? extends CompletableSource> sources) {
         this.sources = sources;
     }
-    
+
     @Override
     public void subscribeActual(final CompletableObserver s) {
         final CompositeDisposable set = new CompositeDisposable();
-        
+
         s.onSubscribe(set);
-        
+
         Iterator<? extends CompletableSource> iterator;
-        
+
         try {
-            iterator = sources.iterator();
+            iterator = ObjectHelper.requireNonNull(sources.iterator(), "The source iterator returned is null");
         } catch (Throwable e) {
             Exceptions.throwIfFatal(e);
             s.onError(e);
             return;
         }
-        
-        if (iterator == null) {
-            s.onError(new NullPointerException("The source iterator returned is null"));
-            return;
-        }
 
         final AtomicInteger wip = new AtomicInteger(1);
-        
-        final SimpleQueue<Throwable> queue = new MpscLinkedQueue<Throwable>();
+
+        final AtomicThrowable error = new AtomicThrowable();
 
         for (;;) {
             if (set.isDisposed()) {
                 return;
             }
-            
+
             boolean b;
             try {
                 b = iterator.hasNext();
             } catch (Throwable e) {
                 Exceptions.throwIfFatal(e);
-                queue.offer(e);
-                if (wip.decrementAndGet() == 0) {
-                    if (queue.isEmpty()) {
-                        s.onComplete();
-                    } else {
-                        s.onError(CompletableMerge.collectErrors(queue));
-                    }
-                }
-                return;
+                error.addThrowable(e);
+                break;
             }
-                    
+
             if (!b) {
                 break;
             }
-            
+
             if (set.isDisposed()) {
                 return;
             }
-            
+
             CompletableSource c;
-            
+
             try {
-                c = iterator.next();
+                c = ObjectHelper.requireNonNull(iterator.next(), "The iterator returned a null CompletableSource");
             } catch (Throwable e) {
                 Exceptions.throwIfFatal(e);
-                queue.offer(e);
-                if (wip.decrementAndGet() == 0) {
-                    if (queue.isEmpty()) {
-                        s.onComplete();
-                    } else {
-                        s.onError(CompletableMerge.collectErrors(queue));
-                    }
-                }
-                return;
+                error.addThrowable(e);
+                break;
             }
-            
+
             if (set.isDisposed()) {
                 return;
             }
-            
-            if (c == null) {
-                NullPointerException e = new NullPointerException("A completable source is null");
-                queue.offer(e);
-                if (wip.decrementAndGet() == 0) {
-                    if (queue.isEmpty()) {
-                        s.onComplete();
-                    } else {
-                        s.onError(CompletableMerge.collectErrors(queue));
-                    }
-                }
-                return;
-            }
-            
+
             wip.getAndIncrement();
-            
-            c.subscribe(new CompletableObserver() {
-                @Override
-                public void onSubscribe(Disposable d) {
-                    set.add(d);
-                }
 
-                @Override
-                public void onError(Throwable e) {
-                    queue.offer(e);
-                    tryTerminate();
-                }
-
-                @Override
-                public void onComplete() {
-                    tryTerminate();
-                }
-                
-                void tryTerminate() {
-                    if (wip.decrementAndGet() == 0) {
-                        if (queue.isEmpty()) {
-                            s.onComplete();
-                        } else {
-                            s.onError(CompletableMerge.collectErrors(queue));
-                        }
-                    }
-                }
-            });
+            c.subscribe(new MergeInnerCompletableObserver(s, set, error, wip));
         }
-        
+
         if (wip.decrementAndGet() == 0) {
-            if (queue.isEmpty()) {
+            Throwable ex = error.terminate();
+            if (ex == null) {
                 s.onComplete();
             } else {
-                s.onError(CompletableMerge.collectErrors(queue));
+                s.onError(ex);
             }
         }
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -15,21 +15,21 @@ package io.reactivex.internal.operators.observable;
 import io.reactivex.*;
 import io.reactivex.disposables.Disposable;
 import io.reactivex.functions.*;
-import io.reactivex.internal.subscribers.observable.SubscriptionLambdaObserver;
+import io.reactivex.internal.observers.DisposableLambdaObserver;
 
 public final class ObservableDoOnLifecycle<T> extends AbstractObservableWithUpstream<T, T> {
     private final Consumer<? super Disposable> onSubscribe;
-    private final Action onCancel;
+    private final Action onDispose;
 
     public ObservableDoOnLifecycle(Observable<T> upstream, Consumer<? super Disposable> onSubscribe,
-            Action onCancel) {
+            Action onDispose) {
         super(upstream);
         this.onSubscribe = onSubscribe;
-        this.onCancel = onCancel;
+        this.onDispose = onDispose;
     }
 
     @Override
     protected void subscribeActual(Observer<? super T> observer) {
-        source.subscribe(new SubscriptionLambdaObserver<T>(observer, onSubscribe, onCancel));
+        source.subscribe(new DisposableLambdaObserver<T>(observer, onSubscribe, onDispose));
     }
 }

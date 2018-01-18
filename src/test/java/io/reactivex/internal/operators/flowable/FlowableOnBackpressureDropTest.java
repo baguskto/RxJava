@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.*;
 import org.junit.Test;
 import org.reactivestreams.*;
 
-import io.reactivex.Flowable;
-import io.reactivex.functions.Consumer;
+import io.reactivex.*;
+import io.reactivex.functions.*;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.*;
@@ -57,7 +57,7 @@ public class FlowableOnBackpressureDropTest {
             @Override
             protected void onStart() {
             }
-            
+
             @Override
             public void onComplete() {
             }
@@ -89,7 +89,7 @@ public class FlowableOnBackpressureDropTest {
         ts.assertNoErrors();
         assertEquals(0, ts.values().get(0).intValue());
     }
-    
+
     @Test
     public void testRequestOverflow() throws InterruptedException {
         final AtomicInteger count = new AtomicInteger();
@@ -100,7 +100,7 @@ public class FlowableOnBackpressureDropTest {
             public void onStart() {
                 request(10);
             }
-            
+
             @Override
             public void onComplete() {
             }
@@ -114,7 +114,7 @@ public class FlowableOnBackpressureDropTest {
             public void onNext(Long t) {
                 count.incrementAndGet();
                 //cause overflow of requested if not handled properly in onBackpressureDrop operator
-                request(Long.MAX_VALUE-1);
+                request(Long.MAX_VALUE - 1);
             }});
         assertEquals(n, count.get());
     }
@@ -132,15 +132,15 @@ public class FlowableOnBackpressureDropTest {
         }
 
     });
-    
-    private static final Flowable<Long> range(final long n) {
+
+    private static Flowable<Long> range(final long n) {
         return Flowable.unsafeCreate(new Publisher<Long>() {
 
             @Override
             public void subscribe(Subscriber<? super Long> s) {
                 BooleanSubscription bs = new BooleanSubscription();
                 s.onSubscribe(bs);
-                for (long i=0;i < n; i++) {
+                for (long i = 0; i < n; i++) {
                     if (bs.isCancelled()) {
                         break;
                     }
@@ -148,7 +148,7 @@ public class FlowableOnBackpressureDropTest {
                 }
                 s.onComplete();
             }
-    
+
         });
     }
 
@@ -157,12 +157,12 @@ public class FlowableOnBackpressureDropTest {
         public void accept(Long n) {
             throw new RuntimeException();
         }
-    }; 
+    };
 
     @Test
     public void testNonFatalExceptionFromOverflowActionIsNotReportedFromUpstreamOperator() {
         final AtomicBoolean errorOccurred = new AtomicBoolean(false);
-        //request 0 
+        //request 0
         TestSubscriber<Long> ts = TestSubscriber.create(0);
         //range method emits regardless of requests so should trigger onBackpressureDrop action
         range(2)
@@ -176,7 +176,32 @@ public class FlowableOnBackpressureDropTest {
             })
           .onBackpressureDrop(THROW_NON_FATAL)
           .subscribe(ts);
-        
+
         assertFalse(errorOccurred.get());
+    }
+
+    @Test
+    public void badSource() {
+        TestHelper.checkBadSourceFlowable(new Function<Flowable<Integer>, Object>() {
+            @Override
+            public Object apply(Flowable<Integer> f) throws Exception {
+                return f.onBackpressureDrop();
+            }
+        }, false, 1, 1, 1);
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Publisher<Object>>() {
+            @Override
+            public Publisher<Object> apply(Flowable<Object> f) throws Exception {
+                return f.onBackpressureDrop();
+            }
+        });
+    }
+
+    @Test
+    public void badRequest() {
+        TestHelper.assertBadRequestReported(Flowable.just(1).onBackpressureDrop());
     }
 }

@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -31,13 +31,13 @@ import io.reactivex.subscribers.TestSubscriber;
 
 /**
  * Test super/extends of generics.
- * 
+ *
  * See https://github.com/Netflix/RxJava/pull/331
  */
 public class FlowableCovarianceTest {
 
     /**
-     * This won't compile if super/extends isn't done correctly on generics
+     * This won't compile if super/extends isn't done correctly on generics.
      */
     @Test
     public void testCovarianceOfFrom() {
@@ -68,7 +68,7 @@ public class FlowableCovarianceTest {
     public void testGroupByCompose() {
         Flowable<Movie> movies = Flowable.just(new HorrorMovie(), new ActionMovie(), new Movie());
         TestSubscriber<String> ts = new TestSubscriber<String>();
-        
+
         movies
         .groupBy(new Function<Movie, Object>() {
             @Override
@@ -92,9 +92,9 @@ public class FlowableCovarianceTest {
                                 System.out.println(v);
                             }
                         })
-                        .compose(new FlowableTransformer<Movie, Object>() {
+                        .compose(new FlowableTransformer<Movie, Movie>() {
                             @Override
-                            public Publisher<? extends Object> apply(Flowable<Movie> m) {
+                            public Publisher<Movie> apply(Flowable<Movie> m) {
                                 return m.concatWith(Flowable.just(new ActionMovie()));
                             }
                         }
@@ -120,31 +120,31 @@ public class FlowableCovarianceTest {
         Flowable<HorrorMovie> movie = Flowable.just(new HorrorMovie());
         Flowable<Movie> movie2 = movie.compose(new FlowableTransformer<HorrorMovie, Movie>() {
             @Override
-            public Publisher<? extends Movie> apply(Flowable<HorrorMovie> t) {
+            public Publisher<Movie> apply(Flowable<HorrorMovie> t) {
                 return Flowable.just(new Movie());
             }
         });
     }
-    
+
     @SuppressWarnings("unused")
     @Test
     public void testCovarianceOfCompose2() {
         Flowable<Movie> movie = Flowable.<Movie> just(new HorrorMovie());
         Flowable<HorrorMovie> movie2 = movie.compose(new FlowableTransformer<Movie, HorrorMovie>() {
             @Override
-            public Publisher<? extends HorrorMovie> apply(Flowable<Movie> t) {
+            public Publisher<HorrorMovie> apply(Flowable<Movie> t) {
                 return Flowable.just(new HorrorMovie());
             }
         });
     }
-    
+
     @SuppressWarnings("unused")
     @Test
     public void testCovarianceOfCompose3() {
         Flowable<Movie> movie = Flowable.<Movie>just(new HorrorMovie());
         Flowable<HorrorMovie> movie2 = movie.compose(new FlowableTransformer<Movie, HorrorMovie>() {
             @Override
-            public Publisher<? extends HorrorMovie> apply(Flowable<Movie> t) {
+            public Publisher<HorrorMovie> apply(Flowable<Movie> t) {
                 return Flowable.just(new HorrorMovie()).map(new Function<HorrorMovie, HorrorMovie>() {
                     @Override
                     public HorrorMovie apply(HorrorMovie v) {
@@ -162,7 +162,7 @@ public class FlowableCovarianceTest {
         Flowable<HorrorMovie> movie = Flowable.just(new HorrorMovie());
         Flowable<HorrorMovie> movie2 = movie.compose(new FlowableTransformer<HorrorMovie, HorrorMovie>() {
             @Override
-            public Publisher<? extends HorrorMovie> apply(Flowable<HorrorMovie> t1) {
+            public Publisher<HorrorMovie> apply(Flowable<HorrorMovie> t1) {
                 return t1.map(new Function<HorrorMovie, HorrorMovie>() {
                     @Override
                     public HorrorMovie apply(HorrorMovie v) {
@@ -172,7 +172,7 @@ public class FlowableCovarianceTest {
             }
         });
     }
-    
+
     @Test
     public void testComposeWithDeltaLogic() {
         List<Movie> list1 = Arrays.asList(new Movie(), new HorrorMovie(), new ActionMovie());
@@ -208,10 +208,10 @@ public class FlowableCovarianceTest {
             }
         }
     };
-    
+
     static FlowableTransformer<List<Movie>, Movie> deltaTransformer = new FlowableTransformer<List<Movie>, Movie>() {
         @Override
-        public Publisher<? extends Movie> apply(Flowable<List<Movie>> movieList) {
+        public Publisher<Movie> apply(Flowable<List<Movie>> movieList) {
             return movieList
                 .startWith(new ArrayList<Movie>())
                 .buffer(2, 1)

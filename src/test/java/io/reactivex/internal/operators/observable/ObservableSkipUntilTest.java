@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,20 +13,20 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.*;
 
 import org.junit.*;
 
 import io.reactivex.*;
+import io.reactivex.functions.Function;
 import io.reactivex.subjects.PublishSubject;
 
 public class ObservableSkipUntilTest {
-    Observer<Object> NbpObserver;
+    Observer<Object> observer;
 
     @Before
     public void before() {
-        NbpObserver = TestHelper.mockObserver();
+        observer = TestHelper.mockObserver();
     }
 
     @Test
@@ -35,7 +35,7 @@ public class ObservableSkipUntilTest {
         PublishSubject<Integer> other = PublishSubject.create();
 
         Observable<Integer> m = source.skipUntil(other);
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
         source.onNext(0);
         source.onNext(1);
@@ -47,11 +47,11 @@ public class ObservableSkipUntilTest {
         source.onNext(4);
         source.onComplete();
 
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onNext(2);
-        verify(NbpObserver, times(1)).onNext(3);
-        verify(NbpObserver, times(1)).onNext(4);
-        verify(NbpObserver, times(1)).onComplete();
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onNext(2);
+        verify(observer, times(1)).onNext(3);
+        verify(observer, times(1)).onNext(4);
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -60,7 +60,7 @@ public class ObservableSkipUntilTest {
 
         Observable<Integer> m = source.skipUntil(Observable.never());
 
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
         source.onNext(0);
         source.onNext(1);
@@ -69,9 +69,9 @@ public class ObservableSkipUntilTest {
         source.onNext(4);
         source.onComplete();
 
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, never()).onNext(any());
-        verify(NbpObserver, times(1)).onComplete();
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, never()).onNext(any());
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -80,11 +80,11 @@ public class ObservableSkipUntilTest {
 
         Observable<Integer> m = source.skipUntil(Observable.empty());
 
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, never()).onNext(any());
-        verify(NbpObserver, never()).onComplete();
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, never()).onNext(any());
+        verify(observer, never()).onComplete();
     }
 
     @Test
@@ -93,7 +93,7 @@ public class ObservableSkipUntilTest {
         PublishSubject<Integer> other = PublishSubject.create();
 
         Observable<Integer> m = source.skipUntil(other);
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
         source.onNext(0);
         source.onNext(1);
@@ -106,11 +106,11 @@ public class ObservableSkipUntilTest {
         source.onNext(4);
         source.onComplete();
 
-        verify(NbpObserver, never()).onError(any(Throwable.class));
-        verify(NbpObserver, times(1)).onNext(2);
-        verify(NbpObserver, times(1)).onNext(3);
-        verify(NbpObserver, times(1)).onNext(4);
-        verify(NbpObserver, times(1)).onComplete();
+        verify(observer, never()).onError(any(Throwable.class));
+        verify(observer, times(1)).onNext(2);
+        verify(observer, times(1)).onNext(3);
+        verify(observer, times(1)).onNext(4);
+        verify(observer, times(1)).onComplete();
     }
 
     @Test
@@ -119,7 +119,7 @@ public class ObservableSkipUntilTest {
         PublishSubject<Integer> other = PublishSubject.create();
 
         Observable<Integer> m = source.skipUntil(other);
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
         source.onNext(0);
         source.onNext(1);
@@ -130,9 +130,9 @@ public class ObservableSkipUntilTest {
         source.onNext(2);
         source.onError(new RuntimeException("Forced failure"));
 
-        verify(NbpObserver, times(1)).onNext(2);
-        verify(NbpObserver, times(1)).onError(any(Throwable.class));
-        verify(NbpObserver, never()).onComplete();
+        verify(observer, times(1)).onNext(2);
+        verify(observer, times(1)).onError(any(Throwable.class));
+        verify(observer, never()).onComplete();
     }
 
     @Test
@@ -141,15 +141,37 @@ public class ObservableSkipUntilTest {
         PublishSubject<Integer> other = PublishSubject.create();
 
         Observable<Integer> m = source.skipUntil(other);
-        m.subscribe(NbpObserver);
+        m.subscribe(observer);
 
         source.onNext(0);
         source.onNext(1);
 
         other.onError(new RuntimeException("Forced failure"));
 
-        verify(NbpObserver, never()).onNext(any());
-        verify(NbpObserver, times(1)).onError(any(Throwable.class));
-        verify(NbpObserver, never()).onComplete();
+        verify(observer, never()).onNext(any());
+        verify(observer, times(1)).onError(any(Throwable.class));
+        verify(observer, never()).onComplete();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishSubject.create().skipUntil(PublishSubject.create()));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.skipUntil(Observable.never());
+            }
+        });
+
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return Observable.never().skipUntil(o);
+            }
+        });
     }
 }

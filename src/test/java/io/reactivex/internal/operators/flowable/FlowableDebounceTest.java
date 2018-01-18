@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,9 +13,10 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import static org.mockito.Matchers.*;
+import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.*;
@@ -23,9 +24,12 @@ import org.mockito.InOrder;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.TestException;
+import io.reactivex.disposables.*;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.Function;
+import io.reactivex.internal.functions.Functions;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
 import io.reactivex.schedulers.TestScheduler;
 import io.reactivex.subscribers.TestSubscriber;
@@ -51,7 +55,7 @@ public class FlowableDebounceTest {
                 observer.onSubscribe(new BooleanSubscription());
                 publishNext(observer, 100, "one");    // Should be skipped since "two" will arrive before the timeout expires.
                 publishNext(observer, 400, "two");    // Should be published since "three" will arrive after the timeout expires.
-                publishNext(observer, 900, "three");   // Should be skipped since onCompleted will arrive before the timeout expires.
+                publishNext(observer, 900, "three");   // Should be skipped since onComplete will arrive before the timeout expires.
                 publishCompleted(observer, 1000);     // Should be published as soon as the timeout expires.
             }
         });
@@ -201,7 +205,7 @@ public class FlowableDebounceTest {
         };
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
-        
+
         source.debounce(debounceSel).subscribe(o);
 
         source.onNext(1);
@@ -212,7 +216,7 @@ public class FlowableDebounceTest {
     }
 
     @Test
-    public void debounceSelectorObservableThrows() {
+    public void debounceSelectorFlowableThrows() {
         PublishProcessor<Integer> source = PublishProcessor.create();
         Function<Integer, Flowable<Integer>> debounceSel = new Function<Integer, Flowable<Integer>>() {
 
@@ -223,7 +227,7 @@ public class FlowableDebounceTest {
         };
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
-        
+
         source.debounce(debounceSel).subscribe(o);
 
         source.onNext(1);
@@ -235,16 +239,16 @@ public class FlowableDebounceTest {
     @Test
     public void debounceTimedLastIsNotLost() {
         PublishProcessor<Integer> source = PublishProcessor.create();
-        
+
         Subscriber<Object> o = TestHelper.mockSubscriber();
-        
+
         source.debounce(100, TimeUnit.MILLISECONDS, scheduler).subscribe(o);
-        
+
         source.onNext(1);
         source.onComplete();
-        
+
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-        
+
         verify(o).onNext(1);
         verify(o).onComplete();
         verify(o, never()).onError(any(Throwable.class));
@@ -263,9 +267,9 @@ public class FlowableDebounceTest {
         };
 
         Subscriber<Object> o = TestHelper.mockSubscriber();
-        
+
         source.debounce(debounceSel).subscribe(o);
-        
+
         source.onNext(1);
         source.onComplete();
 
@@ -291,10 +295,10 @@ public class FlowableDebounceTest {
         subscriber.assertTerminated();
         subscriber.assertNoErrors();
     }
-    
+
     @Test
     public void debounceDefaultScheduler() throws Exception {
-        
+
         TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
 
         Flowable.range(1, 1000).debounce(1, TimeUnit.SECONDS).subscribe(ts);
@@ -303,5 +307,104 @@ public class FlowableDebounceTest {
         ts.assertValue(1000);
         ts.assertNoErrors();
         ts.assertComplete();
+    }
+
+    @Test
+    public void debounceDefault() throws Exception {
+
+        Flowable.just(1).debounce(1, TimeUnit.SECONDS)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishProcessor.create().debounce(1, TimeUnit.SECONDS, new TestScheduler()));
+
+        TestHelper.checkDisposed(PublishProcessor.create().debounce(Functions.justFunction(Flowable.never())));
+
+        Disposable d = new FlowableDebounceTimed.DebounceEmitter<Integer>(1, 1, null);
+        assertFalse(d.isDisposed());
+
+        d.dispose();
+
+        assertTrue(d.isDisposed());
+    }
+
+    @Test
+    public void badSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+                    observer.onComplete();
+                    observer.onNext(1);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .debounce(1, TimeUnit.SECONDS, new TestScheduler())
+            .test()
+            .assertResult();
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void badSourceSelector() {
+        TestHelper.checkBadSourceFlowable(new Function<Flowable<Integer>, Object>() {
+            @Override
+            public Object apply(Flowable<Integer> o) throws Exception {
+                return o.debounce(new Function<Integer, Flowable<Long>>() {
+                    @Override
+                    public Flowable<Long> apply(Integer v) throws Exception {
+                        return Flowable.timer(1, TimeUnit.SECONDS);
+                    }
+                });
+            }
+        }, false, 1, 1, 1);
+
+        TestHelper.checkBadSourceFlowable(new Function<Flowable<Integer>, Object>() {
+            @Override
+            public Object apply(final Flowable<Integer> o) throws Exception {
+                return Flowable.just(1).debounce(new Function<Integer, Flowable<Integer>>() {
+                    @Override
+                    public Flowable<Integer> apply(Integer v) throws Exception {
+                        return o;
+                    }
+                });
+            }
+        }, false, 1, 1, 1);
+    }
+
+    @Test
+    public void debounceWithEmpty() {
+        Flowable.just(1).debounce(Functions.justFunction(Flowable.empty()))
+        .test()
+        .assertResult(1);
+    }
+
+    @Test
+    public void backpressureNoRequest() {
+        Flowable.just(1)
+        .debounce(Functions.justFunction(Flowable.timer(1, TimeUnit.MILLISECONDS)))
+        .test(0L)
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertFailure(MissingBackpressureException.class);
+    }
+
+    @Test
+    public void backpressureNoRequestTimed() {
+        Flowable.just(1)
+        .debounce(1, TimeUnit.MILLISECONDS)
+        .test(0L)
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertFailure(MissingBackpressureException.class);
     }
 }

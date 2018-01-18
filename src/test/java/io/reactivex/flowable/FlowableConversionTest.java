@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -20,29 +20,29 @@ import java.util.concurrent.atomic.*;
 import org.junit.*;
 import org.reactivestreams.*;
 
-import io.reactivex.Flowable;
-import io.reactivex.FlowableOperator;
-import io.reactivex.exceptions.Exceptions;
+import io.reactivex.*;
 import io.reactivex.functions.*;
 import io.reactivex.internal.operators.flowable.*;
+import io.reactivex.internal.util.ExceptionHelper;
+import io.reactivex.observers.*;
 import io.reactivex.schedulers.Schedulers;
-import io.reactivex.subscribers.*;
+import io.reactivex.subscribers.DefaultSubscriber;
 
 public class FlowableConversionTest {
-    
-    public static class Cylon {}
-    
+
+    public static class Cylon { }
+
     public static class Jail {
         Object cylon;
-        
+
         Jail(Object cylon) {
             this.cylon = cylon;
         }
     }
-    
+
     public static class CylonDetectorObservable<T> {
         protected Publisher<T> onSubscribe;
-        
+
         public static <T> CylonDetectorObservable<T> create(Publisher<T> onSubscribe) {
             return new CylonDetectorObservable<T>(onSubscribe);
         }
@@ -58,12 +58,12 @@ public class FlowableConversionTest {
         public <R> CylonDetectorObservable<R> lift(FlowableOperator<? extends R, ? super T> operator) {
             return x(new RobotConversionFunc<T, R>(operator));
         }
-        
+
         public <R, O> O x(Function<Publisher<T>, O> operator) {
             try {
                 return operator.apply(onSubscribe);
             } catch (Throwable ex) {
-                throw Exceptions.propagate(ex);
+                throw ExceptionHelper.wrapOrThrow(ex);
             }
         }
 
@@ -71,16 +71,16 @@ public class FlowableConversionTest {
             try {
                 return transformer.apply(this);
             } catch (Throwable ex) {
-                throw Exceptions.propagate(ex);
+                throw ExceptionHelper.wrapOrThrow(ex);
             }
         }
-        
+
         public final CylonDetectorObservable<T> beep(Predicate<? super T> predicate) {
-            return new CylonDetectorObservable<T>(new FlowableFilter<T>(onSubscribe, predicate));
+            return new CylonDetectorObservable<T>(new FlowableFilter<T>(Flowable.fromPublisher(onSubscribe), predicate));
         }
-        
+
         public final <R> CylonDetectorObservable<R> boop(Function<? super T, ? extends R> func) {
-            return new CylonDetectorObservable<R>(new FlowableMap<T, R>(onSubscribe, func));
+            return new CylonDetectorObservable<R>(new FlowableMap<T, R>(Flowable.fromPublisher(onSubscribe), func));
         }
 
         public CylonDetectorObservable<String> DESTROY() {
@@ -98,12 +98,12 @@ public class FlowableConversionTest {
                     }
                 }});
         }
-        
+
         private static void throwOutTheAirlock(Object cylon) {
             // ...
         }
     }
-    
+
     public static class RobotConversionFunc<T, R> implements Function<Publisher<T>, CylonDetectorObservable<R>> {
         private FlowableOperator<? extends R, ? super T> operator;
 
@@ -126,28 +126,28 @@ public class FlowableConversionTest {
                     } catch (Throwable e) {
                         o.onError(e);
                     }
-                
+
                 }});
         }
     }
-    
+
     public static class ConvertToCylonDetector<T> implements Function<Publisher<T>, CylonDetectorObservable<T>> {
         @Override
         public CylonDetectorObservable<T> apply(final Publisher<T> onSubscribe) {
             return CylonDetectorObservable.create(onSubscribe);
         }
     }
-    
+
     public static class ConvertToObservable<T> implements Function<Publisher<T>, Flowable<T>> {
         @Override
         public Flowable<T> apply(final Publisher<T> onSubscribe) {
             return Flowable.fromPublisher(onSubscribe);
         }
     }
-    
+
     @Test
     public void testConversionBetweenObservableClasses() {
-        final TestSubscriber<String> subscriber = new TestSubscriber<String>(new DefaultSubscriber<String>() {
+        final TestObserver<String> subscriber = new TestObserver<String>(new DefaultObserver<String>() {
 
             @Override
             public void onComplete() {
@@ -165,9 +165,9 @@ public class FlowableConversionTest {
                 System.out.println(t);
             }
         });
-        
+
         List<Object> crewOfBattlestarGalactica = Arrays.asList(new Object[] {"William Adama", "Laura Roslin", "Lee Adama", new Cylon()});
-        
+
         Flowable.fromIterable(crewOfBattlestarGalactica)
             .doOnNext(new Consumer<Object>() {
                 @Override
@@ -197,11 +197,11 @@ public class FlowableConversionTest {
                 }
             })
             .subscribe(subscriber);
-        
+
         subscriber.assertNoErrors();
         subscriber.assertComplete();
     }
-    
+
     @Test
     public void testConvertToConcurrentQueue() {
         final AtomicReference<Throwable> thrown = new AtomicReference<Throwable>(null);
@@ -229,17 +229,17 @@ public class FlowableConversionTest {
                         @Override
                         public ConcurrentLinkedQueue<Integer> apply(Flowable<Integer> onSubscribe) {
                             final ConcurrentLinkedQueue<Integer> q = new ConcurrentLinkedQueue<Integer>();
-                            onSubscribe.subscribe(new DefaultSubscriber<Integer>(){
+                            onSubscribe.subscribe(new DefaultSubscriber<Integer>() {
                                 @Override
                                 public void onComplete() {
                                     isFinished.set(true);
                                 }
-     
+
                                 @Override
                                 public void onError(Throwable e) {
                                     thrown.set(e);
                                 }
-     
+
                                 @Override
                                 public void onNext(Integer t) {
                                     q.add(t);
@@ -247,7 +247,7 @@ public class FlowableConversionTest {
                             return q;
                         }
                     });
-        
+
         int x = 0;
         while (!isFinished.get()) {
             Integer i = queue.poll();

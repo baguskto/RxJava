@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,9 +14,10 @@
 package io.reactivex.internal.operators.flowable;
 
 import static org.junit.Assert.*;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.lang.management.ManagementFactory;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -27,7 +28,10 @@ import org.reactivestreams.*;
 
 import io.reactivex.*;
 import io.reactivex.disposables.Disposable;
+import io.reactivex.flowables.ConnectableFlowable;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.processors.ReplayProcessor;
 import io.reactivex.schedulers.*;
 import io.reactivex.subscribers.TestSubscriber;
@@ -38,7 +42,7 @@ public class FlowableRefCountTest {
     public void testRefCountAsync() {
         final AtomicInteger subscribeCount = new AtomicInteger();
         final AtomicInteger nextCount = new AtomicInteger();
-        Flowable<Long> r = Flowable.interval(0, 5, TimeUnit.MILLISECONDS)
+        Flowable<Long> r = Flowable.interval(0, 20, TimeUnit.MILLISECONDS)
                 .doOnSubscribe(new Consumer<Subscription>() {
                     @Override
                     public void accept(Subscription s) {
@@ -60,14 +64,29 @@ public class FlowableRefCountTest {
                 receivedCount.incrementAndGet();
             }
         });
-        
+
         Disposable s2 = r.subscribe();
 
-        // give time to emit
         try {
-            Thread.sleep(52);
+            Thread.sleep(10);
         } catch (InterruptedException e) {
         }
+
+        for (;;) {
+            int a = nextCount.get();
+            int b = receivedCount.get();
+            if (a > 10 && a < 20 && a == b) {
+                break;
+            }
+            if (a >= 20) {
+                break;
+            }
+            try {
+                Thread.sleep(20);
+            } catch (InterruptedException e) {
+            }
+        }
+        // give time to emit
 
         // now unsubscribe
         s2.dispose(); // unsubscribe s2 first as we're counting in 1 and there can be a race between unsubscribe and one subscriber getting a value but not the other
@@ -204,7 +223,7 @@ public class FlowableRefCountTest {
     public void testConnectUnsubscribe() throws InterruptedException {
         final CountDownLatch unsubscribeLatch = new CountDownLatch(1);
         final CountDownLatch subscribeLatch = new CountDownLatch(1);
-        
+
         Flowable<Long> o = synchronousInterval()
                 .doOnSubscribe(new Consumer<Subscription>() {
                     @Override
@@ -222,7 +241,7 @@ public class FlowableRefCountTest {
                             unsubscribeLatch.countDown();
                     }
                 });
-        
+
         TestSubscriber<Long> s = new TestSubscriber<Long>();
         o.publish().refCount().subscribeOn(Schedulers.newThread()).subscribe(s);
         System.out.println("send unsubscribe");
@@ -247,7 +266,7 @@ public class FlowableRefCountTest {
             testConnectUnsubscribeRaceCondition();
         }
     }
-    
+
     @Test
     public void testConnectUnsubscribeRaceCondition() throws InterruptedException {
         final AtomicInteger subUnsubCount = new AtomicInteger();
@@ -269,7 +288,7 @@ public class FlowableRefCountTest {
                 });
 
         TestSubscriber<Long> s = new TestSubscriber<Long>();
-        
+
         o.publish().refCount().subscribeOn(Schedulers.computation()).subscribe(s);
         System.out.println("send unsubscribe");
         // now immediately unsubscribe while subscribeOn is racing to subscribe
@@ -296,14 +315,14 @@ public class FlowableRefCountTest {
                 subscriber.onSubscribe(new Subscription() {
                     @Override
                     public void request(long n) {
-                        
+
                     }
 
                     @Override
                     public void cancel() {
                         cancel.set(true);
                     }
-                    
+
                 });
                 for (;;) {
                     if (cancel.get()) {
@@ -330,9 +349,9 @@ public class FlowableRefCountTest {
                 observer.onSubscribe(new Subscription() {
                     @Override
                     public void request(long n) {
-                        
+
                     }
-                    
+
                     @Override
                     public void cancel() {
                         unsubscriptionCount.incrementAndGet();
@@ -344,13 +363,13 @@ public class FlowableRefCountTest {
 
         Disposable first = refCounted.subscribe();
         assertEquals(1, subscriptionCount.get());
-        
+
         Disposable second = refCounted.subscribe();
         assertEquals(1, subscriptionCount.get());
-        
+
         first.dispose();
         assertEquals(0, unsubscriptionCount.get());
-        
+
         second.dispose();
         assertEquals(1, unsubscriptionCount.get());
     }
@@ -568,14 +587,14 @@ public class FlowableRefCountTest {
                             System.out.println("Subscriber 2: " + t1);
                     }
                 });
-        
+
         Thread.sleep(1300);
-        
+
         System.out.println(intervalSubscribed.get());
         assertEquals(6, intervalSubscribed.get());
     }
 
-    private enum CancelledSubscriber implements Subscriber<Integer> {
+    private enum CancelledSubscriber implements FlowableSubscriber<Integer> {
         INSTANCE;
 
         @Override public void onSubscribe(Subscription s) {
@@ -590,5 +609,181 @@ public class FlowableRefCountTest {
 
         @Override public void onComplete() {
         }
+    }
+
+    @Test
+    public void disposed() {
+        TestHelper.checkDisposed(Flowable.just(1).publish().refCount());
+    }
+
+    @Test
+    public void noOpConnect() {
+        final int[] calls = { 0 };
+        Flowable<Integer> o = new ConnectableFlowable<Integer>() {
+            @Override
+            public void connect(Consumer<? super Disposable> connection) {
+                calls[0]++;
+            }
+
+            @Override
+            protected void subscribeActual(Subscriber<? super Integer> observer) {
+                observer.onSubscribe(new BooleanSubscription());
+            }
+        }.refCount();
+
+        o.test();
+        o.test();
+
+        assertEquals(1, calls[0]);
+    }
+
+    Flowable<Object> source;
+
+    @Test
+    public void replayNoLeak() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Flowable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        })
+        .replay(1)
+        .refCount();
+
+        source.subscribe();
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void replayNoLeak2() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Flowable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        }).concatWith(Flowable.never())
+        .replay(1)
+        .refCount();
+
+        Disposable s1 = source.subscribe();
+        Disposable s2 = source.subscribe();
+
+        s1.dispose();
+        s2.dispose();
+
+        s1 = null;
+        s2 = null;
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    static final class ExceptionData extends Exception {
+        private static final long serialVersionUID = -6763898015338136119L;
+
+        public final Object data;
+
+        ExceptionData(Object data) {
+            this.data = data;
+        }
+    }
+
+    @Test
+    public void publishNoLeak() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Flowable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                throw new ExceptionData(new byte[100 * 1000 * 1000]);
+            }
+        })
+        .publish()
+        .refCount();
+
+        source.subscribe(Functions.emptyConsumer(), Functions.emptyConsumer());
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void publishNoLeak2() throws Exception {
+        System.gc();
+        Thread.sleep(100);
+
+        long start = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = Flowable.fromCallable(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return new byte[100 * 1000 * 1000];
+            }
+        }).concatWith(Flowable.never())
+        .publish()
+        .refCount();
+
+        Disposable s1 = source.test();
+        Disposable s2 = source.test();
+
+        s1.dispose();
+        s2.dispose();
+
+        s1 = null;
+        s2 = null;
+
+        System.gc();
+        Thread.sleep(100);
+
+        long after = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+
+        source = null;
+        assertTrue(String.format("%,3d -> %,3d%n", start, after), start + 20 * 1000 * 1000 > after);
+    }
+
+    @Test
+    public void replayIsUnsubscribed() {
+        ConnectableFlowable<Integer> co = Flowable.just(1)
+        .replay();
+
+        assertTrue(((Disposable)co).isDisposed());
+
+        Disposable s = co.connect();
+
+        assertFalse(((Disposable)co).isDisposed());
+
+        s.dispose();
+
+        assertTrue(((Disposable)co).isDisposed());
     }
 }

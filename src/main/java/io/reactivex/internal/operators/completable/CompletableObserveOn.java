@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,14 +13,16 @@
 
 package io.reactivex.internal.operators.completable;
 
+import java.util.concurrent.atomic.AtomicReference;
+
 import io.reactivex.*;
 import io.reactivex.disposables.Disposable;
-import io.reactivex.internal.disposables.ArrayCompositeDisposable;
+import io.reactivex.internal.disposables.DisposableHelper;
 
 public final class CompletableObserveOn extends Completable {
 
     final CompletableSource source;
-    
+
     final Scheduler scheduler;
     public CompletableObserveOn(CompletableSource source, Scheduler scheduler) {
         this.source = source;
@@ -29,49 +31,65 @@ public final class CompletableObserveOn extends Completable {
 
     @Override
     protected void subscribeActual(final CompletableObserver s) {
+        source.subscribe(new ObserveOnCompletableObserver(s, scheduler));
+    }
 
-        final ArrayCompositeDisposable ad = new ArrayCompositeDisposable(2);
-        final Scheduler.Worker w = scheduler.createWorker();
-        ad.set(0, w);
-        
-        s.onSubscribe(ad);
-        
-        source.subscribe(new CompletableObserver() {
+    static final class ObserveOnCompletableObserver
+    extends AtomicReference<Disposable>
+    implements CompletableObserver, Disposable, Runnable {
 
-            @Override
-            public void onComplete() {
-                w.schedule(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            s.onComplete();
-                        } finally {
-                            ad.dispose();
-                        }
-                    }
-                });
+
+        private static final long serialVersionUID = 8571289934935992137L;
+
+        final CompletableObserver actual;
+
+        final Scheduler scheduler;
+
+        Throwable error;
+
+        ObserveOnCompletableObserver(CompletableObserver actual, Scheduler scheduler) {
+            this.actual = actual;
+            this.scheduler = scheduler;
+        }
+
+        @Override
+        public void dispose() {
+            DisposableHelper.dispose(this);
+        }
+
+        @Override
+        public boolean isDisposed() {
+            return DisposableHelper.isDisposed(get());
+        }
+
+        @Override
+        public void onSubscribe(Disposable d) {
+            if (DisposableHelper.setOnce(this, d)) {
+                actual.onSubscribe(this);
             }
+        }
 
-            @Override
-            public void onError(final Throwable e) {
-                w.schedule(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            s.onError(e);
-                        } finally {
-                            ad.dispose();
-                        }
-                    }
-                });
-            }
+        @Override
+        public void onError(Throwable e) {
+            this.error = e;
+            DisposableHelper.replace(this, scheduler.scheduleDirect(this));
+        }
 
-            @Override
-            public void onSubscribe(Disposable d) {
-                ad.set(1, d);
+        @Override
+        public void onComplete() {
+            DisposableHelper.replace(this, scheduler.scheduleDirect(this));
+        }
+
+        @Override
+        public void run() {
+            Throwable ex = error;
+            if (ex != null) {
+                error = null;
+                actual.onError(ex);
+            } else {
+                actual.onComplete();
             }
-            
-        });
+        }
     }
 
 }

@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -15,20 +15,26 @@ package io.reactivex.internal.operators.flowable;
 
 import static org.junit.Assert.*;
 
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+import io.reactivex.annotations.NonNull;
 import org.junit.Test;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
+import io.reactivex.exceptions.TestException;
+import io.reactivex.functions.Action;
+import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subscribers.TestSubscriber;
 
 public class FlowableUnsubscribeOnTest {
 
-    @Test
-    public void testUnsubscribeWhenSubscribeOnAndUnsubscribeOnAreOnSameThread() throws InterruptedException {
+    @Test(timeout = 5000)
+    public void unsubscribeWhenSubscribeOnAndUnsubscribeOnAreOnSameThread() throws InterruptedException {
         UIEventLoopScheduler UI_EVENT_LOOP = new UIEventLoopScheduler();
         try {
             final ThreadSubscription subscription = new ThreadSubscription();
@@ -45,12 +51,14 @@ public class FlowableUnsubscribeOnTest {
                 }
             });
 
-            TestSubscriber<Integer> observer = new TestSubscriber<Integer>();
-            w.subscribeOn(UI_EVENT_LOOP).observeOn(Schedulers.computation()).unsubscribeOn(UI_EVENT_LOOP).subscribe(observer);
+            TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+            w.subscribeOn(UI_EVENT_LOOP).observeOn(Schedulers.computation())
+            .unsubscribeOn(UI_EVENT_LOOP)
+            .take(2)
+            .subscribe(ts);
 
-            observer.awaitTerminalEvent(1, TimeUnit.SECONDS);
-            observer.dispose();
-            
+            ts.awaitTerminalEvent(1, TimeUnit.SECONDS);
+
             Thread unsubscribeThread = subscription.getThread();
 
             assertNotNull(unsubscribeThread);
@@ -64,15 +72,15 @@ public class FlowableUnsubscribeOnTest {
             System.out.println("subscribeThread.get(): " + subscribeThread.get());
             assertTrue(unsubscribeThread == UI_EVENT_LOOP.getThread());
 
-            observer.assertValues(1, 2);
-            observer.assertTerminated();
+            ts.assertValues(1, 2);
+            ts.assertTerminated();
         } finally {
             UI_EVENT_LOOP.shutdown();
         }
     }
 
-    @Test
-    public void testUnsubscribeWhenSubscribeOnAndUnsubscribeOnAreOnDifferentThreads() throws InterruptedException {
+    @Test(timeout = 5000)
+    public void unsubscribeWhenSubscribeOnAndUnsubscribeOnAreOnDifferentThreads() throws InterruptedException {
         UIEventLoopScheduler UI_EVENT_LOOP = new UIEventLoopScheduler();
         try {
             final ThreadSubscription subscription = new ThreadSubscription();
@@ -90,11 +98,13 @@ public class FlowableUnsubscribeOnTest {
             });
 
             TestSubscriber<Integer> observer = new TestSubscriber<Integer>();
-            w.subscribeOn(Schedulers.newThread()).observeOn(Schedulers.computation()).unsubscribeOn(UI_EVENT_LOOP).subscribe(observer);
+            w.subscribeOn(Schedulers.newThread()).observeOn(Schedulers.computation())
+            .unsubscribeOn(UI_EVENT_LOOP)
+            .take(2)
+            .subscribe(observer);
 
             observer.awaitTerminalEvent(1, TimeUnit.SECONDS);
-            observer.dispose();
-            
+
             Thread unsubscribeThread = subscription.getThread();
 
             assertNotNull(unsubscribeThread);
@@ -132,10 +142,10 @@ public class FlowableUnsubscribeOnTest {
             latch.await();
             return thread;
         }
-        
+
         @Override
         public void request(long n) {
-            
+
         }
     }
 
@@ -167,7 +177,8 @@ public class FlowableUnsubscribeOnTest {
                 throw new RuntimeException("failed to initialize and get inner thread");
             }
         }
-        
+
+        @NonNull
         @Override
         public Worker createWorker() {
             return eventLoop.createWorker();
@@ -177,5 +188,84 @@ public class FlowableUnsubscribeOnTest {
             return t;
         }
 
+    }
+
+    @Test
+    public void takeHalf() {
+        int elements = 1024;
+        Flowable.range(0, elements * 2).unsubscribeOn(Schedulers.single())
+        .take(elements)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertValueCount(elements)
+        .assertComplete()
+        .assertNoErrors()
+        .assertSubscribed();
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Flowable.just(1).unsubscribeOn(Schedulers.single()));
+    }
+
+    @Test
+    public void normal() {
+        final int[] calls = { 0 };
+
+        Flowable.just(1)
+        .doOnCancel(new Action() {
+            @Override
+            public void run() throws Exception {
+                calls[0]++;
+            }
+        })
+        .unsubscribeOn(Schedulers.single())
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, calls[0]);
+    }
+
+    @Test
+    public void error() {
+        final int[] calls = { 0 };
+
+        Flowable.error(new TestException())
+        .doOnCancel(new Action() {
+            @Override
+            public void run() throws Exception {
+                calls[0]++;
+            }
+        })
+        .unsubscribeOn(Schedulers.single())
+        .test()
+        .assertFailure(TestException.class);
+
+        assertEquals(0, calls[0]);
+    }
+
+    @Test
+    public void signalAfterDispose() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+                    observer.onNext(1);
+                    observer.onNext(2);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .unsubscribeOn(Schedulers.single())
+            .take(1)
+            .test()
+            .assertResult(1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
     }
 }

@@ -1,12 +1,12 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,7 +26,7 @@ import io.reactivex.subjects.BehaviorSubject;
 
 public class ObservableCombineLatestTests {
     /**
-     * This won't compile if super/extends isn't done correctly on generics
+     * This won't compile if super/extends isn't done correctly on generics.
      */
     @Test
     public void testCovarianceOfCombineLatest() {
@@ -67,10 +67,10 @@ public class ObservableCombineLatestTests {
     @Test
     public void testNullEmitting() throws Exception {
         // FIXME this is no longer allowed
-        Observable<Boolean> nullNbpObservable = BehaviorSubject.createDefault((Boolean) null);
-        Observable<Boolean> nonNullNbpObservable = BehaviorSubject.createDefault(true);
+        Observable<Boolean> nullObservable = BehaviorSubject.createDefault((Boolean) null);
+        Observable<Boolean> nonNullObservable = BehaviorSubject.createDefault(true);
         Observable<Boolean> combined =
-                combineLatest(nullNbpObservable, nonNullNbpObservable, new BiFunction<Boolean, Boolean, Boolean>() {
+                combineLatest(nullObservable, nonNullObservable, new BiFunction<Boolean, Boolean, Boolean>() {
                     @Override
                     public Boolean apply(Boolean bool1, Boolean bool2) {
                         return bool1 == null ? null : bool2;

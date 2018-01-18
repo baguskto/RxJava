@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -15,53 +15,46 @@ package io.reactivex.internal.operators.flowable;
 
 import java.util.*;
 
-import org.reactivestreams.Publisher;
-
-import io.reactivex.exceptions.Exceptions;
-import io.reactivex.internal.util.NotificationLite;
+import io.reactivex.Flowable;
+import io.reactivex.internal.util.*;
 import io.reactivex.subscribers.DefaultSubscriber;
 
 /**
  * Returns an Iterable that always returns the item most recently emitted by an Observable, or a
  * seed value if no item has yet been emitted.
  * <p>
- * <img width="640" src="https://github.com/ReactiveX/RxJava/wiki/images/rx-operators/B.mostRecent.png" alt="">
+ * <img width="640" height="490" src="https://github.com/ReactiveX/RxJava/wiki/images/rx-operators/B.mostRecent.png" alt="">
+ *
+ * @param <T> the value type
  */
-public enum BlockingFlowableMostRecent {
-    ;
-    /**
-     * Returns an {@code Iterable} that always returns the item most recently emitted by the {@code Observable}.
-     *
-     * @param <T> the value type
-     * @param source
-     *            the source {@code Observable}
-     * @param initialValue
-     *            a default item to return from the {@code Iterable} if {@code source} has not yet emitted any
-     *            items
-     * @return an {@code Iterable} that always returns the item most recently emitted by {@code source}, or
-     *         {@code initialValue} if {@code source} has not yet emitted any items
-     */
-    public static <T> Iterable<T> mostRecent(final Publisher<? extends T> source, final T initialValue) {
-        return new Iterable<T>() {
-            @Override
-            public Iterator<T> iterator() {
-                MostRecentObserver<T> mostRecentObserver = new MostRecentObserver<T>(initialValue);
+public final class BlockingFlowableMostRecent<T> implements Iterable<T> {
 
-                /**
-                 * Subscribe instead of unsafeSubscribe since this is the final subscribe in the chain
-                 * since it is for BlockingObservable.
-                 */
-                source.subscribe(mostRecentObserver);
+    final Flowable<T> source;
 
-                return mostRecentObserver.getIterable();
-            }
-        };
+    final T initialValue;
+
+    public BlockingFlowableMostRecent(Flowable<T> source, T initialValue) {
+        this.source = source;
+        this.initialValue = initialValue;
     }
 
-    static final class MostRecentObserver<T> extends DefaultSubscriber<T> {
+    @Override
+    public Iterator<T> iterator() {
+        MostRecentSubscriber<T> mostRecentSubscriber = new MostRecentSubscriber<T>(initialValue);
+
+        /**
+         * Subscribe instead of unsafeSubscribe since this is the final subscribe in the chain
+         * since it is for BlockingObservable.
+         */
+        source.subscribe(mostRecentSubscriber);
+
+        return mostRecentSubscriber.getIterable();
+    }
+
+    static final class MostRecentSubscriber<T> extends DefaultSubscriber<T> {
         volatile Object value;
-        
-        MostRecentObserver(T value) {
+
+        MostRecentSubscriber(T value) {
             this.value = NotificationLite.next(value);
         }
 
@@ -85,44 +78,46 @@ public enum BlockingFlowableMostRecent {
          * thread expect {@link Iterator#next()} called from a different thread to work.
          * @return the Iterator
          */
-        public Iterator<T> getIterable() {
-            return new Iterator<T>() {
-                /**
-                 * buffer to make sure that the state of the iterator doesn't change between calling hasNext() and next().
-                 */
-                private Object buf;
+        public Iterator getIterable() {
+            return new Iterator();
+        }
 
-                @Override
-                public boolean hasNext() {
-                    buf = value;
-                    return !NotificationLite.isComplete(buf);
-                }
+        final class Iterator implements java.util.Iterator<T> {
+            /**
+             * buffer to make sure that the state of the iterator doesn't change between calling hasNext() and next().
+             */
+            private Object buf;
 
-                @Override
-                public T next() {
-                    try {
-                        // if hasNext wasn't called before calling next.
-                        if (buf == null) {
-                            buf = value;
-                        }
-                        if (NotificationLite.isComplete(buf)) {
-                            throw new NoSuchElementException();
-                        }
-                        if (NotificationLite.isError(buf)) {
-                            throw Exceptions.propagate(NotificationLite.getError(buf));
-                        }
-                        return NotificationLite.getValue(buf);
+            @Override
+            public boolean hasNext() {
+                buf = value;
+                return !NotificationLite.isComplete(buf);
+            }
+
+            @Override
+            public T next() {
+                try {
+                    // if hasNext wasn't called before calling next.
+                    if (buf == null) {
+                        buf = value;
                     }
-                    finally {
-                        buf = null;
+                    if (NotificationLite.isComplete(buf)) {
+                        throw new NoSuchElementException();
                     }
+                    if (NotificationLite.isError(buf)) {
+                        throw ExceptionHelper.wrapOrThrow(NotificationLite.getError(buf));
+                    }
+                    return NotificationLite.getValue(buf);
                 }
+                finally {
+                    buf = null;
+                }
+            }
 
-                @Override
-                public void remove() {
-                    throw new UnsupportedOperationException("Read only iterator");
-                }
-            };
+            @Override
+            public void remove() {
+                throw new UnsupportedOperationException("Read only iterator");
+            }
         }
     }
 }

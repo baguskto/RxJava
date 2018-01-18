@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -20,7 +20,7 @@ import io.reactivex.functions.Function;
 
 public enum ArrayListSupplier implements Callable<List<Object>>, Function<Object, List<Object>> {
     INSTANCE;
-  
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public static <T> Callable<List<T>> asCallable() {
         return (Callable)INSTANCE;

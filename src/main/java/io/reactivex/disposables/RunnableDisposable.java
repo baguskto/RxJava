@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -12,11 +12,13 @@
  */
 package io.reactivex.disposables;
 
+import io.reactivex.annotations.NonNull;
+
 /**
  * A disposable container that manages a Runnable instance.
  */
 final class RunnableDisposable extends ReferenceDisposable<Runnable> {
-    /** */
+
     private static final long serialVersionUID = -8219729196779211169L;
 
     RunnableDisposable(Runnable value) {
@@ -24,7 +26,12 @@ final class RunnableDisposable extends ReferenceDisposable<Runnable> {
     }
 
     @Override
-    protected void onDisposed(Runnable value) {
+    protected void onDisposed(@NonNull Runnable value) {
         value.run();
+    }
+
+    @Override
+    public String toString() {
+        return "RunnableDisposable(disposed=" + isDisposed() + ", " + get() + ")";
     }
 }

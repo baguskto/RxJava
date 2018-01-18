@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -26,15 +26,18 @@ import io.reactivex.*;
 import io.reactivex.Observable;
 import io.reactivex.Observer;
 import io.reactivex.disposables.*;
-import io.reactivex.exceptions.TestException;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
+import io.reactivex.observers.TestObserver;
+import io.reactivex.plugins.RxJavaPlugins;
 
 public class ObservableUsingTest {
 
-    private interface Resource {
-        public String getTextFromWeb();
+    interface Resource {
+        String getTextFromWeb();
 
-        public void dispose();
+        void dispose();
     }
 
     private static class DisposeAction implements Consumer<Resource> {
@@ -83,16 +86,16 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
+        Observer<String> observer = TestHelper.mockObserver();
+
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), disposeEagerly);
-        o.subscribe(NbpObserver);
+        o.subscribe(observer);
 
-        InOrder inOrder = inOrder(NbpObserver);
-        inOrder.verify(NbpObserver, times(1)).onNext("Hello");
-        inOrder.verify(NbpObserver, times(1)).onNext("world!");
-        inOrder.verify(NbpObserver, times(1)).onComplete();
+        InOrder inOrder = inOrder(observer);
+        inOrder.verify(observer, times(1)).onNext("Hello");
+        inOrder.verify(observer, times(1)).onNext("world!");
+        inOrder.verify(observer, times(1)).onComplete();
         inOrder.verifyNoMoreInteractions();
 
         // The resouce should be closed
@@ -143,22 +146,22 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
+        Observer<String> observer = TestHelper.mockObserver();
 
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), disposeEagerly);
-        o.subscribe(NbpObserver);
-        o.subscribe(NbpObserver);
+        o.subscribe(observer);
+        o.subscribe(observer);
 
-        InOrder inOrder = inOrder(NbpObserver);
+        InOrder inOrder = inOrder(observer);
 
-        inOrder.verify(NbpObserver, times(1)).onNext("Hello");
-        inOrder.verify(NbpObserver, times(1)).onNext("world!");
-        inOrder.verify(NbpObserver, times(1)).onComplete();
+        inOrder.verify(observer, times(1)).onNext("Hello");
+        inOrder.verify(observer, times(1)).onNext("world!");
+        inOrder.verify(observer, times(1)).onComplete();
 
-        inOrder.verify(NbpObserver, times(1)).onNext("Hello");
-        inOrder.verify(NbpObserver, times(1)).onNext("world!");
-        inOrder.verify(NbpObserver, times(1)).onComplete();
+        inOrder.verify(observer, times(1)).onNext("Hello");
+        inOrder.verify(observer, times(1)).onNext("world!");
+        inOrder.verify(observer, times(1)).onComplete();
         inOrder.verifyNoMoreInteractions();
     }
 
@@ -206,7 +209,7 @@ public class ObservableUsingTest {
         Callable<Disposable> resourceFactory = new Callable<Disposable>() {
             @Override
             public Disposable call() {
-                return Disposables.from(unsubscribe);
+                return Disposables.fromRunnable(unsubscribe);
             }
         };
 
@@ -244,7 +247,7 @@ public class ObservableUsingTest {
         Callable<Disposable> resourceFactory = new Callable<Disposable>() {
             @Override
             public Disposable call() {
-                return Disposables.from(unsubscribe);
+                return Disposables.fromRunnable(unsubscribe);
             }
         };
 
@@ -264,7 +267,7 @@ public class ObservableUsingTest {
             Observable
             .using(resourceFactory, observableFactory, disposeSubscription, disposeEagerly)
             .blockingLast();
-            
+
             fail("Should throw a TestException when the observableFactory throws it");
         } catch (TestException e) {
             // Make sure that unsubscribe is called so that users can close
@@ -287,16 +290,16 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
+        Observer<String> observer = TestHelper.mockObserver();
+
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), true)
-        .doOnCancel(unsub)
+        .doOnDispose(unsub)
         .doOnComplete(completion);
-        
-        o.safeSubscribe(NbpObserver);
 
-        assertEquals(Arrays.asList("disposed", "completed", "unsub"), events);
+        o.safeSubscribe(observer);
+
+        assertEquals(Arrays.asList("disposed", "completed" /* , "unsub" */), events);
 
     }
 
@@ -314,28 +317,28 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
+        Observer<String> observer = TestHelper.mockObserver();
+
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), false)
-        .doOnCancel(unsub)
+        .doOnDispose(unsub)
         .doOnComplete(completion);
-        
-        o.safeSubscribe(NbpObserver);
 
-        assertEquals(Arrays.asList("completed", "unsub", "disposed"), events);
+        o.safeSubscribe(observer);
+
+        assertEquals(Arrays.asList("completed", /*"unsub",*/ "disposed"), events);
 
     }
 
-    
-    
+
+
     @Test
     public void testUsingDisposesEagerlyBeforeError() {
         final List<String> events = new ArrayList<String>();
         Callable<Resource> resourceFactory = createResourceFactory(events);
         final Consumer<Throwable> onError = createOnErrorAction(events);
         final Action unsub = createUnsubAction(events);
-        
+
         Function<Resource, Observable<String>> observableFactory = new Function<Resource, Observable<String>>() {
             @Override
             public Observable<String> apply(Resource resource) {
@@ -344,26 +347,26 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
+        Observer<String> observer = TestHelper.mockObserver();
+
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), true)
-        .doOnCancel(unsub)
+        .doOnDispose(unsub)
         .doOnError(onError);
-        
-        o.safeSubscribe(NbpObserver);
 
-        assertEquals(Arrays.asList("disposed", "error", "unsub"), events);
+        o.safeSubscribe(observer);
+
+        assertEquals(Arrays.asList("disposed", "error" /*, "unsub"*/), events);
 
     }
-    
+
     @Test
     public void testUsingDoesNotDisposesEagerlyBeforeError() {
         final List<String> events = new ArrayList<String>();
         final Callable<Resource> resourceFactory = createResourceFactory(events);
         final Consumer<Throwable> onError = createOnErrorAction(events);
         final Action unsub = createUnsubAction(events);
-        
+
         Function<Resource, Observable<String>> observableFactory = new Function<Resource, Observable<String>>() {
             @Override
             public Observable<String> apply(Resource resource) {
@@ -372,16 +375,16 @@ public class ObservableUsingTest {
             }
         };
 
-        Observer<String> NbpObserver = TestHelper.mockObserver();
-        
+        Observer<String> observer = TestHelper.mockObserver();
+
         Observable<String> o = Observable.using(resourceFactory, observableFactory,
                 new DisposeAction(), false)
-        .doOnCancel(unsub)
+        .doOnDispose(unsub)
         .doOnError(onError);
-        
-        o.safeSubscribe(NbpObserver);
 
-        assertEquals(Arrays.asList("error", "unsub", "disposed"), events);
+        o.safeSubscribe(observer);
+
+        assertEquals(Arrays.asList("error", /* "unsub",*/ "disposed"), events);
     }
 
     private static Action createUnsubAction(final List<String> events) {
@@ -421,7 +424,7 @@ public class ObservableUsingTest {
             }
         };
     }
-    
+
     private static Action createOnCompletedAction(final List<String> events) {
         return new Action() {
             @Override
@@ -430,5 +433,138 @@ public class ObservableUsingTest {
             }
         };
     }
-    
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.using(
+                new Callable<Object>() {
+                    @Override
+                    public Object call() throws Exception {
+                        return 1;
+                    }
+                },
+                new Function<Object, ObservableSource<Object>>() {
+                    @Override
+                    public ObservableSource<Object> apply(Object v) throws Exception {
+                        return Observable.never();
+                    }
+                },
+                Functions.emptyConsumer()
+        ));
+    }
+
+    @Test
+    public void supplierDisposerCrash() {
+        TestObserver<Object> to = Observable.using(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return 1;
+            }
+        }, new Function<Object, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Object v) throws Exception {
+                throw new TestException("First");
+            }
+        }, new Consumer<Object>() {
+            @Override
+            public void accept(Object e) throws Exception {
+                throw new TestException("Second");
+            }
+        })
+        .test()
+        .assertFailure(CompositeException.class);
+
+        List<Throwable> errors = TestHelper.compositeList(to.errors().get(0));
+
+        TestHelper.assertError(errors, 0, TestException.class, "First");
+        TestHelper.assertError(errors, 1, TestException.class, "Second");
+    }
+
+    @Test
+    public void eagerOnErrorDisposerCrash() {
+        TestObserver<Object> to = Observable.using(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return 1;
+            }
+        }, new Function<Object, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Object v) throws Exception {
+                return Observable.error(new TestException("First"));
+            }
+        }, new Consumer<Object>() {
+            @Override
+            public void accept(Object e) throws Exception {
+                throw new TestException("Second");
+            }
+        })
+        .test()
+        .assertFailure(CompositeException.class);
+
+        List<Throwable> errors = TestHelper.compositeList(to.errors().get(0));
+
+        TestHelper.assertError(errors, 0, TestException.class, "First");
+        TestHelper.assertError(errors, 1, TestException.class, "Second");
+    }
+
+    @Test
+    public void eagerOnCompleteDisposerCrash() {
+        Observable.using(new Callable<Object>() {
+            @Override
+            public Object call() throws Exception {
+                return 1;
+            }
+        }, new Function<Object, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Object v) throws Exception {
+                return Observable.empty();
+            }
+        }, new Consumer<Object>() {
+            @Override
+            public void accept(Object e) throws Exception {
+                throw new TestException("Second");
+            }
+        })
+        .test()
+        .assertFailureAndMessage(TestException.class, "Second");
+    }
+
+    @Test
+    public void nonEagerDisposerCrash() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            Observable.using(new Callable<Object>() {
+                @Override
+                public Object call() throws Exception {
+                    return 1;
+                }
+            }, new Function<Object, ObservableSource<Object>>() {
+                @Override
+                public ObservableSource<Object> apply(Object v) throws Exception {
+                    return Observable.empty();
+                }
+            }, new Consumer<Object>() {
+                @Override
+                public void accept(Object e) throws Exception {
+                    throw new TestException("Second");
+                }
+            }, false)
+            .test()
+            .assertResult();
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "Second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void sourceSupplierReturnsNull() {
+        Observable.using(Functions.justCallable(1),
+                Functions.justFunction((Observable<Object>)null),
+                Functions.emptyConsumer())
+        .test()
+        .assertFailureAndMessage(NullPointerException.class, "The sourceSupplier returned a null ObservableSource")
+        ;
+    }
 }

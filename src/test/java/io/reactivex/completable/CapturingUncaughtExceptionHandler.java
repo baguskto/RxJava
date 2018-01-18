@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -19,7 +19,7 @@ package io.reactivex.completable;
 import java.util.concurrent.CountDownLatch;
 
 public final class CapturingUncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
-    public int count = 0;
+    public int count;
     public Throwable caught;
     public CountDownLatch completed = new CountDownLatch(1);
 

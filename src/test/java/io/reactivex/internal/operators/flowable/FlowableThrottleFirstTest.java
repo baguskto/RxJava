@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,9 +13,10 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.*;
@@ -23,8 +24,9 @@ import org.mockito.InOrder;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.TestException;
+import io.reactivex.exceptions.*;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
 import io.reactivex.schedulers.TestScheduler;
 
@@ -149,5 +151,53 @@ public class FlowableThrottleFirstTest {
         inOrder.verify(observer).onNext(7);
         inOrder.verify(observer).onComplete();
         inOrder.verifyNoMoreInteractions();
+    }
+
+
+    @Test
+    public void throttleFirstDefaultScheduler() {
+        Flowable.just(1).throttleFirst(100, TimeUnit.MILLISECONDS)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Flowable.just(1).throttleFirst(1, TimeUnit.DAYS));
+    }
+
+    @Test
+    public void badSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+                    observer.onNext(1);
+                    observer.onNext(2);
+                    observer.onComplete();
+                    observer.onNext(3);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .throttleFirst(1, TimeUnit.DAYS)
+            .test()
+            .assertResult(1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void backpressureNoRequest() {
+        Flowable.range(1, 3)
+        .throttleFirst(1, TimeUnit.MINUTES)
+        .test(0L)
+        .assertFailure(MissingBackpressureException.class);
     }
 }

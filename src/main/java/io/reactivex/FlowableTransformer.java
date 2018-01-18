@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -13,9 +13,8 @@
 
 package io.reactivex;
 
+import io.reactivex.annotations.*;
 import org.reactivestreams.Publisher;
-
-import io.reactivex.functions.Function;
 
 /**
  * Interface to compose Flowables.
@@ -23,6 +22,13 @@ import io.reactivex.functions.Function;
  * @param <Upstream> the upstream value type
  * @param <Downstream> the downstream value type
  */
-public interface FlowableTransformer<Upstream, Downstream> extends Function<Flowable<Upstream>, Publisher<? extends Downstream>> {
-
+public interface FlowableTransformer<Upstream, Downstream> {
+    /**
+     * Applies a function to the upstream Flowable and returns a Publisher with
+     * optionally different element type.
+     * @param upstream the upstream Flowable instance
+     * @return the transformed Publisher instance
+     */
+    @NonNull
+    Publisher<Downstream> apply(@NonNull Flowable<Upstream> upstream);
 }

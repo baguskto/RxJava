@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,7 +13,7 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.concurrent.TimeUnit;
@@ -23,7 +23,9 @@ import org.mockito.InOrder;
 
 import io.reactivex.*;
 import io.reactivex.exceptions.TestException;
-import io.reactivex.schedulers.TestScheduler;
+import io.reactivex.functions.Function;
+import io.reactivex.observers.TestObserver;
+import io.reactivex.schedulers.*;
 import io.reactivex.subjects.PublishSubject;
 
 public class ObservableSkipLastTimedTest {
@@ -146,5 +148,91 @@ public class ObservableSkipLastTimedTest {
         inOrder.verify(o).onNext(3);
         inOrder.verify(o).onComplete();
         inOrder.verifyNoMoreInteractions();
+    }
+
+    @Test
+    public void skipLastTimedDefaultScheduler() {
+        Observable.just(1).concatWith(Observable.just(2).delay(500, TimeUnit.MILLISECONDS))
+        .skipLast(300, TimeUnit.MILLISECONDS)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void skipLastTimedDefaultSchedulerDelayError() {
+        Observable.just(1).concatWith(Observable.just(2).delay(500, TimeUnit.MILLISECONDS))
+        .skipLast(300, TimeUnit.MILLISECONDS, true)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void skipLastTimedCustomSchedulerDelayError() {
+        Observable.just(1).concatWith(Observable.just(2).delay(500, TimeUnit.MILLISECONDS))
+        .skipLast(300, TimeUnit.MILLISECONDS, Schedulers.io(), true)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(PublishSubject.create().skipLast(1, TimeUnit.DAYS));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Object>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Object> o) throws Exception {
+                return o.skipLast(1, TimeUnit.DAYS);
+            }
+        });
+    }
+
+    @Test
+    public void onNextDisposeRace() {
+        TestScheduler scheduler = new TestScheduler();
+        for (int i = 0; i < 500; i++) {
+            final PublishSubject<Integer> ps = PublishSubject.create();
+
+            final TestObserver<Integer> to = ps.skipLast(1, TimeUnit.DAYS, scheduler).test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ps.onComplete();
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    to.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+        }
+    }
+
+    @Test
+    public void errorDelayed() {
+        Observable.error(new TestException())
+        .skipLast(1, TimeUnit.DAYS, new TestScheduler(), true)
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void take() {
+        Observable.just(1)
+        .skipLast(0, TimeUnit.SECONDS)
+        .take(1)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
     }
 }

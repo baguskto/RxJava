@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -14,7 +14,7 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
@@ -23,11 +23,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.*;
 import org.mockito.InOrder;
 
+import io.reactivex.*;
 import io.reactivex.Observable;
 import io.reactivex.Observer;
-import io.reactivex.TestHelper;
+import io.reactivex.disposables.Disposables;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.*;
+import io.reactivex.internal.util.CrashingIterable;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.subjects.PublishSubject;
 
 public class ObservableZipIterableTest {
@@ -36,7 +39,7 @@ public class ObservableZipIterableTest {
     PublishSubject<String> s2;
     Observable<String> zipped;
 
-    Observer<String> NbpObserver;
+    Observer<String> observer;
     InOrder inOrder;
 
     @Before
@@ -52,10 +55,10 @@ public class ObservableZipIterableTest {
         s2 = PublishSubject.create();
         zipped = Observable.zip(s1, s2, concat2Strings);
 
-        NbpObserver = TestHelper.mockObserver();
-        inOrder = inOrder(NbpObserver);
+        observer = TestHelper.mockObserver();
+        inOrder = inOrder(observer);
 
-        zipped.subscribe(NbpObserver);
+        zipped.subscribe(observer);
     }
 
     BiFunction<Object, Object, String> zipr2 = new BiFunction<Object, Object, String>() {
@@ -78,7 +81,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableSameSize() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -103,7 +106,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableEmptyFirstSize() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -123,7 +126,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableEmptySecond() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -145,7 +148,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableFirstShorter() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -168,7 +171,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableSecondShorter() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -192,7 +195,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableFirstThrows() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -215,7 +218,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableIteratorThrows() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -242,7 +245,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableHasNextThrows() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -292,7 +295,7 @@ public class ObservableZipIterableTest {
     @Test
     public void testZipIterableNextThrows() {
         PublishSubject<String> r1 = PublishSubject.create();
-        /* define a NbpSubscriber to receive aggregated events */
+        /* define an Observer to receive aggregated events */
         Observer<String> o = TestHelper.mockObserver();
         InOrder io = inOrder(o);
 
@@ -331,7 +334,7 @@ public class ObservableZipIterableTest {
         verify(o, never()).onComplete();
 
     }
-    
+
     Consumer<String> printer = new Consumer<String>() {
         @Override
         public void accept(String pv) {
@@ -344,20 +347,87 @@ public class ObservableZipIterableTest {
         @Override
         public String apply(Integer t1) {
             counter.incrementAndGet();
-            System.out.println("Omg I'm calculating so hard: " + t1 + "*" + t1 + "=" + (t1*t1));
-            return " " + (t1*t1);
+            System.out.println("Omg I'm calculating so hard: " + t1 + "*" + t1 + "=" + (t1 * t1));
+            return " " + (t1 * t1);
         }
     }
 
-    @Test 
+    @Test
     public void testTake2() {
         Observable<Integer> o = Observable.just(1, 2, 3, 4, 5);
         Iterable<String> it = Arrays.asList("a", "b", "c", "d", "e");
-        
+
         SquareStr squareStr = new SquareStr();
-        
+
         o.map(squareStr).zipWith(it, concat2Strings).take(2).subscribe(printer);
-        
+
         assertEquals(2, squareStr.counter.get());
+    }
+
+    @Test
+    public void dispose() {
+        TestHelper.checkDisposed(Observable.just(1).zipWith(Arrays.asList(1), new BiFunction<Integer, Integer, Object>() {
+            @Override
+            public Object apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        }));
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeObservable(new Function<Observable<Integer>, ObservableSource<Object>>() {
+            @Override
+            public ObservableSource<Object> apply(Observable<Integer> o) throws Exception {
+                return o.zipWith(Arrays.asList(1), new BiFunction<Integer, Integer, Object>() {
+                    @Override
+                    public Object apply(Integer a, Integer b) throws Exception {
+                        return a + b;
+                    }
+                });
+            }
+        });
+    }
+
+    @Test
+    public void iteratorThrows() {
+        Observable.just(1).zipWith(new CrashingIterable(100, 1, 100), new BiFunction<Integer, Integer, Object>() {
+            @Override
+            public Object apply(Integer a, Integer b) throws Exception {
+                return a + b;
+            }
+        })
+        .test()
+        .assertFailureAndMessage(TestException.class, "hasNext()");
+    }
+
+    @Test
+    public void badSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Observable<Integer>() {
+                @Override
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onComplete();
+                    observer.onNext(2);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .zipWith(Arrays.asList(1), new BiFunction<Integer, Integer, Object>() {
+                @Override
+                public Object apply(Integer a, Integer b) throws Exception {
+                    return a + b;
+                }
+            })
+            .test()
+            .assertResult(2);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
     }
 }

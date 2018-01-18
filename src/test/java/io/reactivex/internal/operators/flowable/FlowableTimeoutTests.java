@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,10 +13,12 @@
 
 package io.reactivex.internal.operators.flowable;
 
-import static org.mockito.Matchers.*;
+import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.*;
 
 import org.junit.*;
@@ -24,7 +26,9 @@ import org.mockito.InOrder;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
+import io.reactivex.exceptions.TestException;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
 import io.reactivex.schedulers.TestScheduler;
 import io.reactivex.subscribers.TestSubscriber;
@@ -48,9 +52,9 @@ public class FlowableTimeoutTests {
     public void shouldNotTimeoutIfOnNextWithinTimeout() {
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
-        
+
         withTimeout.subscribe(ts);
-        
+
         testScheduler.advanceTimeBy(2, TimeUnit.SECONDS);
         underlyingSubject.onNext("One");
         verify(observer).onNext("One");
@@ -63,9 +67,9 @@ public class FlowableTimeoutTests {
     public void shouldNotTimeoutIfSecondOnNextWithinTimeout() {
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
-        
+
         withTimeout.subscribe(ts);
-        
+
         testScheduler.advanceTimeBy(2, TimeUnit.SECONDS);
         underlyingSubject.onNext("One");
         testScheduler.advanceTimeBy(2, TimeUnit.SECONDS);
@@ -80,9 +84,9 @@ public class FlowableTimeoutTests {
     public void shouldTimeoutIfOnNextNotWithinTimeout() {
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
-        
+
         withTimeout.subscribe(ts);
-        
+
         testScheduler.advanceTimeBy(TIMEOUT + 1, TimeUnit.SECONDS);
         verify(observer).onError(any(TimeoutException.class));
         ts.dispose();
@@ -129,7 +133,7 @@ public class FlowableTimeoutTests {
     @Test
     public void shouldSwitchToOtherIfOnNextNotWithinTimeout() {
         Flowable<String> other = Flowable.just("a", "b", "c");
-        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, other, testScheduler);
+        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, testScheduler, other);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
@@ -152,7 +156,7 @@ public class FlowableTimeoutTests {
     @Test
     public void shouldSwitchToOtherIfOnErrorNotWithinTimeout() {
         Flowable<String> other = Flowable.just("a", "b", "c");
-        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, other, testScheduler);
+        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, testScheduler, other);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
@@ -175,7 +179,7 @@ public class FlowableTimeoutTests {
     @Test
     public void shouldSwitchToOtherIfOnCompletedNotWithinTimeout() {
         Flowable<String> other = Flowable.just("a", "b", "c");
-        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, other, testScheduler);
+        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, testScheduler, other);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
@@ -198,7 +202,7 @@ public class FlowableTimeoutTests {
     @Test
     public void shouldSwitchToOtherAndCanBeUnsubscribedIfOnNextNotWithinTimeout() {
         PublishProcessor<String> other = PublishProcessor.create();
-        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, other, testScheduler);
+        Flowable<String> source = underlyingSubject.timeout(TIMEOUT, TIME_UNIT, testScheduler, other);
 
         Subscriber<String> observer = TestHelper.mockSubscriber();
         TestSubscriber<String> ts = new TestSubscriber<String>(observer);
@@ -226,7 +230,7 @@ public class FlowableTimeoutTests {
     }
 
     @Test
-    public void shouldTimeoutIfSynchronizedObservableEmitFirstOnNextNotWithinTimeout()
+    public void shouldTimeoutIfSynchronizedFlowableEmitFirstOnNextNotWithinTimeout()
             throws InterruptedException {
         final CountDownLatch exit = new CountDownLatch(1);
         final CountDownLatch timeoutSetuped = new CountDownLatch(1);
@@ -356,5 +360,240 @@ public class FlowableTimeoutTests {
         inOrder.verifyNoMoreInteractions();
 
         verify(s, times(1)).cancel();
+    }
+
+    @Test
+    public void shouldUnsubscribeFromUnderlyingSubscriptionOnDispose() {
+        final PublishProcessor<String> subject = PublishProcessor.create();
+        final TestScheduler scheduler = new TestScheduler();
+
+        final TestSubscriber<String> observer = subject
+                .timeout(100, TimeUnit.MILLISECONDS, scheduler)
+                .test();
+
+        assertTrue(subject.hasSubscribers());
+
+        observer.dispose();
+
+        assertFalse(subject.hasSubscribers());
+    }
+
+    @Test
+    public void timedAndOther() {
+        Flowable.never().timeout(100, TimeUnit.MILLISECONDS, Flowable.just(1))
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertResult(1);
+    }
+
+    @Test
+    public void disposed() {
+        TestHelper.checkDisposed(PublishProcessor.create().timeout(1, TimeUnit.DAYS));
+
+        TestHelper.checkDisposed(PublishProcessor.create().timeout(1, TimeUnit.DAYS, Flowable.just(1)));
+    }
+
+    @Test
+    public void timedErrorOther() {
+        Flowable.error(new TestException())
+        .timeout(1, TimeUnit.DAYS, Flowable.just(1))
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void timedError() {
+        Flowable.error(new TestException())
+        .timeout(1, TimeUnit.DAYS)
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void timedEmptyOther() {
+        Flowable.empty()
+        .timeout(1, TimeUnit.DAYS, Flowable.just(1))
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void timedEmpty() {
+        Flowable.empty()
+        .timeout(1, TimeUnit.DAYS)
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void badSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+
+                    observer.onNext(1);
+                    observer.onComplete();
+                    observer.onNext(2);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .timeout(1, TimeUnit.DAYS)
+            .test()
+            .assertResult(1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void badSourceOther() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> observer) {
+                    observer.onSubscribe(new BooleanSubscription());
+
+                    observer.onNext(1);
+                    observer.onComplete();
+                    observer.onNext(2);
+                    observer.onError(new TestException());
+                    observer.onComplete();
+                }
+            }
+            .timeout(1, TimeUnit.DAYS, Flowable.just(3))
+            .test()
+            .assertResult(1);
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+
+    @Test
+    public void timedTake() {
+        PublishProcessor<Integer> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = ps.timeout(1, TimeUnit.DAYS)
+        .take(1)
+        .test();
+
+        assertTrue(ps.hasSubscribers());
+
+        ps.onNext(1);
+
+        assertFalse(ps.hasSubscribers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void timedFallbackTake() {
+        PublishProcessor<Integer> ps = PublishProcessor.create();
+
+        TestSubscriber<Integer> to = ps.timeout(1, TimeUnit.DAYS, Flowable.just(2))
+        .take(1)
+        .test();
+
+        assertTrue(ps.hasSubscribers());
+
+        ps.onNext(1);
+
+        assertFalse(ps.hasSubscribers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void fallbackErrors() {
+        Flowable.never()
+        .timeout(1, TimeUnit.MILLISECONDS, Flowable.error(new TestException()))
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void onNextOnTimeoutRace() {
+        for (int i = 0; i < 1000; i++) {
+            final TestScheduler sch = new TestScheduler();
+
+            final PublishProcessor<Integer> pp = PublishProcessor.create();
+
+            TestSubscriber<Integer> ts = pp.timeout(1, TimeUnit.SECONDS, sch).test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    pp.onNext(1);
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    sch.advanceTimeBy(1, TimeUnit.SECONDS);
+                }
+            };
+
+            TestHelper.race(r1, r2);
+
+            if (ts.valueCount() != 0) {
+                if (ts.errorCount() != 0) {
+                    ts.assertFailure(TimeoutException.class, 1);
+                } else {
+                    ts.assertValuesOnly(1);
+                }
+            } else {
+                ts.assertFailure(TimeoutException.class);
+            }
+        }
+    }
+
+    @Test
+    public void onNextOnTimeoutRaceFallback() {
+        for (int i = 0; i < 1000; i++) {
+            final TestScheduler sch = new TestScheduler();
+
+            final PublishProcessor<Integer> pp = PublishProcessor.create();
+
+            TestSubscriber<Integer> ts = pp.timeout(1, TimeUnit.SECONDS, sch, Flowable.just(2)).test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    pp.onNext(1);
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    sch.advanceTimeBy(1, TimeUnit.SECONDS);
+                }
+            };
+
+            TestHelper.race(r1, r2);
+
+            if (ts.isTerminated()) {
+                int c = ts.valueCount();
+                if (c == 1) {
+                    int v = ts.values().get(0);
+                    assertTrue("" + v, v == 1 || v == 2);
+                } else {
+                    ts.assertResult(1, 2);
+                }
+            } else {
+                ts.assertValuesOnly(1);
+            }
+        }
     }
 }

@@ -1,11 +1,11 @@
 /**
- * Copyright 2016 Netflix, Inc.
- * 
+ * Copyright (c) 2016-present, RxJava Contributors.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software distributed under the License is
  * distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
  * the License for the specific language governing permissions and limitations under the License.
@@ -13,7 +13,7 @@
 
 package io.reactivex.internal.operators.observable;
 
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import java.util.concurrent.TimeUnit;
@@ -23,7 +23,8 @@ import org.mockito.InOrder;
 
 import io.reactivex.*;
 import io.reactivex.exceptions.TestException;
-import io.reactivex.schedulers.TestScheduler;
+import io.reactivex.observers.TestObserver;
+import io.reactivex.schedulers.*;
 import io.reactivex.subjects.PublishSubject;
 
 public class ObservableTakeLastTimedTest {
@@ -198,5 +199,81 @@ public class ObservableTakeLastTimedTest {
 
         verify(o, never()).onNext(any());
         verify(o, never()).onError(any(Throwable.class));
+    }
+
+    @Test
+    public void takeLastTimeAndSize() {
+        Observable.just(1, 2)
+        .takeLast(1, 1, TimeUnit.MINUTES)
+        .test()
+        .assertResult(2);
+    }
+
+    @Test
+    public void takeLastTime() {
+        Observable.just(1, 2)
+        .takeLast(1, TimeUnit.MINUTES)
+        .test()
+        .assertResult(1, 2);
+    }
+
+    @Test
+    public void takeLastTimeDelayError() {
+        Observable.just(1, 2).concatWith(Observable.<Integer>error(new TestException()))
+        .takeLast(1, TimeUnit.MINUTES, true)
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @Test
+    public void takeLastTimeDelayErrorCustomScheduler() {
+        Observable.just(1, 2).concatWith(Observable.<Integer>error(new TestException()))
+        .takeLast(1, TimeUnit.MINUTES, Schedulers.io(), true)
+        .test()
+        .assertFailure(TestException.class, 1, 2);
+    }
+
+    @Test
+    public void disposed() {
+        TestHelper.checkDisposed(PublishSubject.create().takeLast(1, TimeUnit.MINUTES));
+    }
+
+    @Test
+    public void observeOn() {
+        Observable.range(1, 1000)
+        .takeLast(1, TimeUnit.DAYS)
+        .take(500)
+        .observeOn(Schedulers.single(), true, 1)
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertSubscribed()
+        .assertValueCount(500)
+        .assertNoErrors()
+        .assertComplete();
+    }
+
+    @Test
+    public void cancelCompleteRace() {
+        for (int i = 0; i < 500; i++) {
+            final PublishSubject<Integer> ps = PublishSubject.create();
+
+            final TestObserver<Integer> to = ps.takeLast(1, TimeUnit.DAYS).test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ps.onComplete();
+                }
+            };
+
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    to.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+        }
     }
 }

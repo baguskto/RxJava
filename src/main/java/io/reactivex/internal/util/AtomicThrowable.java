@@ -1,5 +1,5 @@
 /**
- * Copyright 2016 Netflix, Inc.
+ * Copyright (c) 2016-present, RxJava Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
  * compliance with the License. You may obtain a copy of the License at
@@ -16,14 +16,14 @@ package io.reactivex.internal.util;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Atomic container for Throwables including combining and having a 
+ * Atomic container for Throwables including combining and having a
  * terminal state via ExceptionHelper.
  * <p>
  * Watch out for the leaked AtomicReference methods!
  */
 public final class AtomicThrowable extends AtomicReference<Throwable> {
 
-    /** */
+
     private static final long serialVersionUID = 3949248817947090603L;
 
     /**
@@ -34,7 +34,7 @@ public final class AtomicThrowable extends AtomicReference<Throwable> {
     public boolean addThrowable(Throwable t) {
         return ExceptionHelper.addThrowable(this, t);
     }
-    
+
     /**
      * Atomically terminate the container and return the contents of the last
      * non-terminal Throwable of it.
@@ -43,7 +43,7 @@ public final class AtomicThrowable extends AtomicReference<Throwable> {
     public Throwable terminate() {
         return ExceptionHelper.terminate(this);
     }
-    
+
     public boolean isTerminated() {
         return get() == ExceptionHelper.TERMINATED;
     }
