@@ -1,12 +1,12 @@
 /**
  * Copyright 2016 Netflix, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,41 +27,42 @@ import org.junit.*;
 import rx.*;
 import rx.exceptions.*;
 import rx.functions.Action1;
+import rx.functions.Cancellable;
 import rx.observers.TestSubscriber;
 import rx.plugins.RxJavaHooks;
 import rx.subjects.PublishSubject;
 
-public class OnSubscribeFromAsyncTest {
+public class OnSubscribeCreateTest {
 
-    PublishAsyncEmitter source;
+    PublishEmitter source;
 
-    PublishAsyncEmitterNoCancel sourceNoCancel;
+    PublishEmitterNoCancel sourceNoCancel;
 
     TestSubscriber<Integer> ts;
-    
+
     @Before
     public void before() {
-        source = new PublishAsyncEmitter();
-        sourceNoCancel = new PublishAsyncEmitterNoCancel();
+        source = new PublishEmitter();
+        sourceNoCancel = new PublishEmitterNoCancel();
         ts = TestSubscriber.create(0L);
     }
-    
+
     @Test
     public void normalBuffered() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValue(1);
-        
+
         Assert.assertEquals(0, source.requested());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValues(1, 2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -69,15 +70,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void normalDrop() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.DROP).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.DROP).subscribe(ts);
+
         source.onNext(1);
 
         ts.requestMore(1);
 
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.assertValues(2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -85,8 +86,8 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void normalLatest() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.LATEST).subscribe(ts);
+
         source.onNext(1);
 
         source.onNext(2);
@@ -101,8 +102,8 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void normalNone() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.NONE).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.NONE).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
@@ -114,9 +115,9 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void normalNoneRequested() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.NONE).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.NONE).subscribe(ts);
         ts.requestMore(2);
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
@@ -129,8 +130,8 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void normalError() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.ERROR).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.ERROR).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
@@ -138,48 +139,48 @@ public class OnSubscribeFromAsyncTest {
         ts.assertNoValues();
         ts.assertError(MissingBackpressureException.class);
         ts.assertNotCompleted();
-        
-        Assert.assertEquals("fromAsync: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
+
+        Assert.assertEquals("create: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
     }
-    
+
     @Test
     public void overflowErrorIsNotFollowedByAnotherErrorDueToOnNextFromUpstream() {
-        Action1<AsyncEmitter<Integer>> source = new Action1<AsyncEmitter<Integer>>(){
+        Action1<Emitter<Integer>> source = new Action1<Emitter<Integer>>() {
 
             @Override
-            public void call(AsyncEmitter<Integer> emitter) {
+            public void call(Emitter<Integer> emitter) {
                 emitter.onNext(1);
                 //don't check for unsubscription
                 emitter.onNext(2);
             }};
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
+
         ts.assertNoValues();
         ts.assertError(MissingBackpressureException.class);
         ts.assertNotCompleted();
-        
-        Assert.assertEquals("fromAsync: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
+
+        Assert.assertEquals("create: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
     }
-    
+
     @Test
     public void overflowErrorIsNotFollowedByAnotherCompletedDueToCompletedFromUpstream() {
-        Action1<AsyncEmitter<Integer>> source = new Action1<AsyncEmitter<Integer>>(){
+        Action1<Emitter<Integer>> source = new Action1<Emitter<Integer>>() {
 
             @Override
-            public void call(AsyncEmitter<Integer> emitter) {
+            public void call(Emitter<Integer> emitter) {
                 emitter.onNext(1);
                 //don't check for unsubscription
                 emitter.onCompleted();
             }};
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
+
         ts.assertNoValues();
         ts.assertError(MissingBackpressureException.class);
         ts.assertNotCompleted();
-        
-        Assert.assertEquals("fromAsync: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
+
+        Assert.assertEquals("create: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
     }
-    
+
     @Test
     public void overflowErrorIsNotFollowedByAnotherErrorDueToOnErrorFromUpstreamAndSecondErrorIsReportedToHook() {
         try {
@@ -190,21 +191,21 @@ public class OnSubscribeFromAsyncTest {
                     list.add(t);
                 }});
             final RuntimeException e = new RuntimeException();
-            Action1<AsyncEmitter<Integer>> source = new Action1<AsyncEmitter<Integer>>(){
-    
+            Action1<Emitter<Integer>> source = new Action1<Emitter<Integer>>() {
+
                 @Override
-                public void call(AsyncEmitter<Integer> emitter) {
+                public void call(Emitter<Integer> emitter) {
                     emitter.onNext(1);
                     //don't check for unsubscription
                     emitter.onError(e);
                 }};
-            Observable.fromAsync(source, AsyncEmitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
-            
+            Observable.create(source, Emitter.BackpressureMode.ERROR).unsafeSubscribe(ts);
+
             ts.assertNoValues();
             ts.assertError(MissingBackpressureException.class);
             ts.assertNotCompleted();
-            
-            Assert.assertEquals("fromAsync: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
+
+            Assert.assertEquals("create: could not emit value due to lack of requests", ts.getOnErrorEvents().get(0).getMessage());
             assertEquals(Arrays.asList(e), list);
         } finally {
             RxJavaHooks.reset();
@@ -213,18 +214,18 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void errorBuffered() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValue(1);
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValues(1, 2);
         ts.assertError(TestException.class);
         ts.assertNotCompleted();
@@ -232,29 +233,29 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void errorLatest() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.LATEST).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValues(2);
         ts.assertError(TestException.class);
         ts.assertNotCompleted();
     }
-    
+
     @Test
     public void errorNone() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.NONE).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.NONE).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValues(1, 2);
         ts.assertError(TestException.class);
         ts.assertNotCompleted();
@@ -262,15 +263,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedBuffer() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).subscribe(ts);
         ts.unsubscribe();
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -278,15 +279,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedLatest() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.LATEST).subscribe(ts);
         ts.unsubscribe();
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -294,15 +295,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedError() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.ERROR).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.ERROR).subscribe(ts);
         ts.unsubscribe();
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -310,15 +311,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedDrop() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.DROP).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.DROP).subscribe(ts);
         ts.unsubscribe();
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -326,15 +327,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNone() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.NONE).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.NONE).subscribe(ts);
         ts.unsubscribe();
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -342,15 +343,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNoCancelBuffer() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts);
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -358,15 +359,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNoCancelLatest() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts);
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -374,15 +375,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNoCancelError() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.ERROR).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.ERROR).subscribe(ts);
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -390,15 +391,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNoCancelDrop() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.DROP).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.DROP).subscribe(ts);
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -406,15 +407,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribedNoCancelNone() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.NONE).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.NONE).subscribe(ts);
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(1);
-        
+
         ts.assertNoValues();
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -422,14 +423,14 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void deferredRequest() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1, 2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -437,14 +438,14 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void take() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).take(2).subscribe(ts);
-        
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).take(2).subscribe(ts);
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1, 2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -452,13 +453,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void takeOne() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).take(1).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).take(1).subscribe(ts);
         ts.requestMore(2);
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -466,13 +467,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void requestExact() {
-        Observable.fromAsync(source, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
+        Observable.create(source, Emitter.BackpressureMode.BUFFER).subscribe(ts);
         ts.requestMore(2);
-        
+
         source.onNext(1);
         source.onNext(2);
         source.onCompleted();
-        
+
         ts.assertValues(1, 2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -480,14 +481,14 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void takeNoCancel() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).take(2).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).take(2).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onCompleted();
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1, 2);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -495,13 +496,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void takeOneNoCancel() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).take(1).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).take(1).subscribe(ts);
         ts.requestMore(2);
-        
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
         sourceNoCancel.onCompleted();
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -509,15 +510,15 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void unsubscribeNoCancel() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts);
         ts.requestMore(2);
-        
+
         sourceNoCancel.onNext(1);
 
         ts.unsubscribe();
-        
+
         sourceNoCancel.onNext(2);
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertNotCompleted();
@@ -533,11 +534,11 @@ public class OnSubscribeFromAsyncTest {
                 unsubscribe();
             }
         };
-        
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts1);
-        
+
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts1);
+
         sourceNoCancel.onNext(1);
-        
+
         ts1.assertValues(1);
         ts1.assertNoErrors();
         ts1.assertNotCompleted();
@@ -545,13 +546,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void completeInline() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onCompleted();
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -559,13 +560,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void errorInline() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1);
         ts.assertError(TestException.class);
         ts.assertNotCompleted();
@@ -580,12 +581,12 @@ public class OnSubscribeFromAsyncTest {
                 requestMore(1);
             }
         };
-        
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.BUFFER).subscribe(ts1);
-        
+
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.BUFFER).subscribe(ts1);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
-        
+
         ts1.assertValues(1, 2);
         ts1.assertNoErrors();
         ts1.assertNotCompleted();
@@ -600,11 +601,11 @@ public class OnSubscribeFromAsyncTest {
                 unsubscribe();
             }
         };
-        
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts1);
-        
+
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts1);
+
         sourceNoCancel.onNext(1);
-        
+
         ts1.assertValues(1);
         ts1.assertNoErrors();
         ts1.assertNotCompleted();
@@ -619,11 +620,11 @@ public class OnSubscribeFromAsyncTest {
                 unsubscribe();
             }
         };
-        
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts1);
-        
+
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts1);
+
         sourceNoCancel.onNext(1);
-        
+
         ts1.assertValues(1);
         ts1.assertNoErrors();
         ts1.assertNotCompleted();
@@ -631,13 +632,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void completeInlineLatest() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onCompleted();
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -645,13 +646,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void completeInlineExactLatest() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onCompleted();
-        
+
         ts.requestMore(1);
-        
+
         ts.assertValues(1);
         ts.assertNoErrors();
         ts.assertCompleted();
@@ -659,13 +660,13 @@ public class OnSubscribeFromAsyncTest {
 
     @Test
     public void errorInlineLatest() {
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts);
-        
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onError(new TestException());
-        
+
         ts.requestMore(2);
-        
+
         ts.assertValues(1);
         ts.assertError(TestException.class);
         ts.assertNotCompleted();
@@ -680,36 +681,36 @@ public class OnSubscribeFromAsyncTest {
                 requestMore(1);
             }
         };
-        
-        Observable.fromAsync(sourceNoCancel, AsyncEmitter.BackpressureMode.LATEST).subscribe(ts1);
-        
+
+        Observable.create(sourceNoCancel, Emitter.BackpressureMode.LATEST).subscribe(ts1);
+
         sourceNoCancel.onNext(1);
         sourceNoCancel.onNext(2);
-        
+
         ts1.assertValues(1, 2);
         ts1.assertNoErrors();
         ts1.assertNotCompleted();
     }
-    
-    static final class PublishAsyncEmitter implements Action1<AsyncEmitter<Integer>>, Observer<Integer> {
-        
+
+    static final class PublishEmitter implements Action1<Emitter<Integer>>, Observer<Integer> {
+
         final PublishSubject<Integer> subject;
-        
-        AsyncEmitter<Integer> current;
-        
-        public PublishAsyncEmitter() {
+
+        Emitter<Integer> current;
+
+        public PublishEmitter() {
             this.subject = PublishSubject.create();
         }
-        
+
         long requested() {
             return current.requested();
         }
-        
+
         @Override
-        public void call(final AsyncEmitter<Integer> t) {
+        public void call(final Emitter<Integer> t) {
 
             this.current = t;
-            
+
             final Subscription s = subject.subscribe(new Observer<Integer>() {
 
                 @Override
@@ -726,43 +727,43 @@ public class OnSubscribeFromAsyncTest {
                 public void onNext(Integer v) {
                     t.onNext(v);
                 }
-                
+
             });
-            
-            t.setCancellation(new AsyncEmitter.Cancellable() {
+
+            t.setCancellation(new Cancellable() {
                 @Override
                 public void cancel() throws Exception {
                     s.unsubscribe();
                 }
             });;
         }
-        
+
         @Override
         public void onNext(Integer t) {
             subject.onNext(t);
         }
-        
+
         @Override
         public void onError(Throwable e) {
             subject.onError(e);
         }
-        
+
         @Override
         public void onCompleted() {
             subject.onCompleted();
         }
     }
-    
-    static final class PublishAsyncEmitterNoCancel implements Action1<AsyncEmitter<Integer>>, Observer<Integer> {
-        
+
+    static final class PublishEmitterNoCancel implements Action1<Emitter<Integer>>, Observer<Integer> {
+
         final PublishSubject<Integer> subject;
-        
-        public PublishAsyncEmitterNoCancel() {
+
+        public PublishEmitterNoCancel() {
             this.subject = PublishSubject.create();
         }
-        
+
         @Override
-        public void call(final AsyncEmitter<Integer> t) {
+        public void call(final Emitter<Integer> t) {
 
             subject.subscribe(new Observer<Integer>() {
 
@@ -780,20 +781,20 @@ public class OnSubscribeFromAsyncTest {
                 public void onNext(Integer v) {
                     t.onNext(v);
                 }
-                
+
             });
         }
-        
+
         @Override
         public void onNext(Integer t) {
             subject.onNext(t);
         }
-        
+
         @Override
         public void onError(Throwable e) {
             subject.onError(e);
         }
-        
+
         @Override
         public void onCompleted() {
             subject.onCompleted();

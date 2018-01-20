@@ -1,12 +1,12 @@
 /**
  * Copyright 2014 Netflix, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -124,7 +124,7 @@ public class OnSubscribeDoOnEachTest {
         // https://github.com/Netflix/RxJava/issues/1451
         final int expectedCount = 3;
         final AtomicInteger count = new AtomicInteger();
-        for (int i=0; i < expectedCount; i++) {
+        for (int i = 0; i < expectedCount; i++) {
             Observable
                     .just(Boolean.TRUE, Boolean.FALSE)
                     .takeWhile(new Func1<Boolean, Boolean>() {
@@ -150,7 +150,7 @@ public class OnSubscribeDoOnEachTest {
         // https://github.com/Netflix/RxJava/issues/1451
         final int expectedCount = 3;
         final AtomicInteger count = new AtomicInteger();
-        for (int i=0; i < expectedCount; i++) {
+        for (int i = 0; i < expectedCount; i++) {
             Observable
                     .just(Boolean.TRUE, Boolean.FALSE, Boolean.FALSE)
                     .takeWhile(new Func1<Boolean, Boolean>() {
@@ -178,7 +178,7 @@ public class OnSubscribeDoOnEachTest {
                     .flatMap(new Func1<Integer, Observable<?>>() {
                         @Override
                         public Observable<?> call(Integer integer) {
-                            return Observable.create(new Observable.OnSubscribe<Object>() {
+                            return Observable.unsafeCreate(new Observable.OnSubscribe<Object>() {
                                 @Override
                                 public void call(Subscriber<Object> o) {
                                     throw new NullPointerException("Test NPE");
@@ -200,11 +200,11 @@ public class OnSubscribeDoOnEachTest {
             System.out.println("Received exception: " + e);
         }
     }
-    
+
     @Test
     public void testOnErrorThrows() {
         TestSubscriber<Object> ts = TestSubscriber.create();
-        
+
         Observable.error(new TestException())
         .doOnError(new Action1<Throwable>() {
             @Override
@@ -212,24 +212,24 @@ public class OnSubscribeDoOnEachTest {
                 throw new TestException();
             }
         }).subscribe(ts);
-        
+
         ts.assertNoValues();
         ts.assertNotCompleted();
         ts.assertError(CompositeException.class);
-        
+
         CompositeException ex = (CompositeException)ts.getOnErrorEvents().get(0);
-        
+
         List<Throwable> exceptions = ex.getExceptions();
         assertEquals(2, exceptions.size());
         assertTrue(exceptions.get(0) instanceof TestException);
         assertTrue(exceptions.get(1) instanceof TestException);
     }
-    
+
     @Test
     public void testIfOnNextActionFailsEmitsErrorAndDoesNotFollowWithCompleted() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
         final RuntimeException e1 = new RuntimeException();
-        Observable.create(new OnSubscribe<Integer>() {
+        Observable.unsafeCreate(new OnSubscribe<Integer>() {
 
             @Override
             public void call(final Subscriber<? super Integer> subscriber) {
@@ -254,12 +254,12 @@ public class OnSubscribeDoOnEachTest {
         ts.assertError(e1);
         ts.assertNotCompleted();
     }
-    
+
     @Test
     public void testIfOnNextActionFailsEmitsErrorAndDoesNotFollowWithOnNext() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
         final RuntimeException e1 = new RuntimeException();
-        Observable.create(new OnSubscribe<Integer>() {
+        Observable.unsafeCreate(new OnSubscribe<Integer>() {
 
             @Override
             public void call(final Subscriber<? super Integer> subscriber) {
@@ -274,7 +274,7 @@ public class OnSubscribeDoOnEachTest {
                     }});
             }})
             .doOnNext(new Action1<Integer>() {
-                
+
                 @Override
                 public void call(Integer t) {
                     throw e1;
@@ -284,21 +284,21 @@ public class OnSubscribeDoOnEachTest {
         assertEquals(1, ts.getOnErrorEvents().size());
         ts.assertNotCompleted();
     }
-    
+
     @Test
     public void testIfOnNextActionFailsEmitsErrorAndReportsMoreErrorsToRxJavaHooksNotDownstream() {
         try {
-            final List<Throwable> list= new CopyOnWriteArrayList<Throwable>();
+            final List<Throwable> list = new CopyOnWriteArrayList<Throwable>();
             RxJavaHooks.setOnError(new Action1<Throwable>() {
 
                 @Override
                 public void call(Throwable e) {
-                     list.add(e);  
+                     list.add(e);
                 }});
             TestSubscriber<Integer> ts = TestSubscriber.create();
             final RuntimeException e1 = new RuntimeException();
             final RuntimeException e2 = new RuntimeException();
-            Observable.create(new OnSubscribe<Integer>() {
+            Observable.unsafeCreate(new OnSubscribe<Integer>() {
 
                 @Override
                 public void call(final Subscriber<? super Integer> subscriber) {
@@ -328,7 +328,7 @@ public class OnSubscribeDoOnEachTest {
             RxJavaHooks.reset();
         }
     }
-    
+
     @Test
     public void testIfCompleteActionFailsEmitsError() {
         TestSubscriber<Integer> ts = TestSubscriber.create();
@@ -345,7 +345,7 @@ public class OnSubscribeDoOnEachTest {
         ts.assertError(e1);
         ts.assertNotCompleted();
     }
-    
+
     @Test
     public void testUnsubscribe() {
         TestSubscriber<Object> ts = TestSubscriber.create(0);

@@ -17,10 +17,8 @@ package rx;
 
 import java.util.concurrent.TimeUnit;
 
-import rx.annotations.Experimental;
 import rx.functions.*;
-import rx.internal.schedulers.SchedulerWhen;
-import rx.internal.subscriptions.SequentialSubscription;
+import rx.internal.schedulers.*;
 import rx.schedulers.Schedulers;
 
 /**
@@ -44,18 +42,6 @@ public abstract class Scheduler {
  *  : Without virtual extension methods even additive changes are breaking and thus severely impede library
  *    maintenance.
  */
-
-    /**
-     * The tolerance for a clock drift in nanoseconds where the periodic scheduler will rebase.
-     * <p>
-     * The associated system parameter, {@code rx.scheduler.drift-tolerance}, expects its value in minutes.
-     */
-    static final long CLOCK_DRIFT_TOLERANCE_NANOS;
-    static {
-        CLOCK_DRIFT_TOLERANCE_NANOS = TimeUnit.MINUTES.toNanos(
-                Long.getLong("rx.scheduler.drift-tolerance", 15));
-    }
-
     /**
      * Retrieves or creates a new {@link Scheduler.Worker} that represents serial execution of actions.
      * <p>
@@ -70,7 +56,7 @@ public abstract class Scheduler {
     /**
      * Sequential Scheduler for executing actions on a single thread or event loop.
      * <p>
-     * Unsubscribing the {@link Worker} unschedules all outstanding work and allows resources cleanup.
+     * Unsubscribing the {@link Worker} cancels all outstanding work and allows resources cleanup.
      */
     public abstract static class Worker implements Subscription {
 
@@ -79,24 +65,24 @@ public abstract class Scheduler {
          *
          * @param action
          *            Action to schedule
-         * @return a subscription to be able to unsubscribe the action (unschedule it if not executed)
+         * @return a subscription to be able to prevent or cancel the execution of the action
          */
         public abstract Subscription schedule(Action0 action);
 
         /**
          * Schedules an Action for execution at some point in the future.
          * <p>
-         * Note to implementors: non-positive {@code delayTime} should be regarded as undelayed schedule, i.e.,
+         * Note to implementors: non-positive {@code delayTime} should be regarded as non-delayed schedule, i.e.,
          * as if the {@link #schedule(rx.functions.Action0)} was called.
          *
          * @param action
          *            the Action to schedule
          * @param delayTime
-         *            time to wait before executing the action; non-positive values indicate an undelayed
+         *            time to wait before executing the action; non-positive values indicate an non-delayed
          *            schedule
          * @param unit
          *            the time unit of {@code delayTime}
-         * @return a subscription to be able to unsubscribe the action (unschedule it if not executed)
+         * @return a subscription to be able to prevent or cancel the execution of the action
          */
         public abstract Subscription schedule(final Action0 action, final long delayTime, final TimeUnit unit);
 
@@ -106,62 +92,23 @@ public abstract class Scheduler {
          * concurrently). Each scheduler that can do periodic scheduling in a better way should override this.
          * <p>
          * Note to implementors: non-positive {@code initialTime} and {@code period} should be regarded as
-         * undelayed scheduling of the first and any subsequent executions.
+         * non-delayed scheduling of the first and any subsequent executions.
          *
          * @param action
          *            the Action to execute periodically
          * @param initialDelay
          *            time to wait before executing the action for the first time; non-positive values indicate
-         *            an undelayed schedule
+         *            an non-delayed schedule
          * @param period
          *            the time interval to wait each time in between executing the action; non-positive values
          *            indicate no delay between repeated schedules
          * @param unit
          *            the time unit of {@code period}
-         * @return a subscription to be able to unsubscribe the action (unschedule it if not executed)
+         * @return a subscription to be able to prevent or cancel the execution of the action
          */
         public Subscription schedulePeriodically(final Action0 action, long initialDelay, long period, TimeUnit unit) {
-            final long periodInNanos = unit.toNanos(period);
-            final long firstNowNanos = TimeUnit.MILLISECONDS.toNanos(now());
-            final long firstStartInNanos = firstNowNanos + unit.toNanos(initialDelay);
-
-            final SequentialSubscription first = new SequentialSubscription();
-            final SequentialSubscription mas = new SequentialSubscription(first);
-
-            final Action0 recursiveAction = new Action0() {
-                long count;
-                long lastNowNanos = firstNowNanos;
-                long startInNanos = firstStartInNanos;
-                @Override
-                public void call() {
-                    action.call();
-
-                    if (!mas.isUnsubscribed()) {
-
-                        long nextTick;
-
-                        long nowNanos = TimeUnit.MILLISECONDS.toNanos(now());
-                        // If the clock moved in a direction quite a bit, rebase the repetition period
-                        if (nowNanos + CLOCK_DRIFT_TOLERANCE_NANOS < lastNowNanos
-                                || nowNanos >= lastNowNanos + periodInNanos + CLOCK_DRIFT_TOLERANCE_NANOS) {
-                            nextTick = nowNanos + periodInNanos;
-                            /* 
-                             * Shift the start point back by the drift as if the whole thing
-                             * started count periods ago.
-                             */
-                            startInNanos = nextTick - (periodInNanos * (++count));
-                        } else {
-                            nextTick = startInNanos + (++count * periodInNanos);
-                        }
-                        lastNowNanos = nowNanos;
-
-                        long delay = nextTick - nowNanos;
-                        mas.replace(schedule(this, delay, TimeUnit.NANOSECONDS));
-                    }
-                }
-            };
-            first.replace(schedule(recursiveAction, initialDelay, unit));
-            return mas;
+            return SchedulePeriodicHelper.schedulePeriodically(this, action,
+                    initialDelay, period, unit, null);
         }
 
         /**
@@ -211,10 +158,10 @@ public abstract class Scheduler {
      * size thread pool:
      *
      * <pre>
-     * Scheduler limitSched = Schedulers.computation().when(workers -> {
-     * 	// use merge max concurrent to limit the number of concurrent
-     * 	// callbacks two at a time
-     * 	return Completable.merge(Observable.merge(workers), 2);
+     * Scheduler limitScheduler = Schedulers.computation().when(workers -> {
+     *     // use merge max concurrent to limit the number of concurrent
+     *     // callbacks two at a time
+     *     return Completable.merge(Observable.merge(workers), 2);
      * });
      * </pre>
      * <p>
@@ -229,10 +176,10 @@ public abstract class Scheduler {
      * subscription to the second.
      *
      * <pre>
-     * Scheduler limitSched = Schedulers.computation().when(workers -> {
-     * 	// use merge max concurrent to limit the number of concurrent
-     * 	// Observables two at a time
-     * 	return Completable.merge(Observable.merge(workers, 2));
+     * Scheduler limitScheduler = Schedulers.computation().when(workers -> {
+     *     // use merge max concurrent to limit the number of concurrent
+     *     // Observables two at a time
+     *     return Completable.merge(Observable.merge(workers, 2));
      * });
      * </pre>
      *
@@ -242,11 +189,11 @@ public abstract class Scheduler {
      * bucket algorithm).
      *
      * <pre>
-     * Scheduler slowSched = Schedulers.computation().when(workers -> {
-     * 	// use concatenate to make each worker happen one at a time.
-     * 	return Completable.concat(workers.map(actions -> {
-     * 		// delay the starting of the next worker by 1 second.
-     * 		return Completable.merge(actions.delaySubscription(1, TimeUnit.SECONDS));
+     * Scheduler slowScheduler = Schedulers.computation().when(workers -> {
+     *     // use concatenate to make each worker happen one at a time.
+     *     return Completable.concat(workers.map(actions -> {
+     *         // delay the starting of the next worker by 1 second.
+     *         return Completable.merge(actions.delaySubscription(1, TimeUnit.SECONDS));
      *    }));
      * });
      * </pre>
@@ -255,9 +202,9 @@ public abstract class Scheduler {
      * @param combine the function that takes a two-level nested Observable sequence of a Completable and returns
      * the Completable that will be subscribed to and should trigger the execution of the scheduled Actions.
      * @return the Scheduler with the customized execution behavior
+     * @since 1.3
      */
     @SuppressWarnings("unchecked")
-    @Experimental
     public <S extends Scheduler & Subscription> S when(Func1<Observable<Observable<Completable>>, Completable> combine) {
         return (S) new SchedulerWhen(combine, this);
     }
