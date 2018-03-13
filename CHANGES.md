@@ -2,6 +2,68 @@
 
 The changelog of version 1.x can be found at https://github.com/ReactiveX/RxJava/blob/1.x/CHANGES.md
 
+### Version 2.1.10 - February 24, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex.rxjava2%7Crxjava%7C2.1.10%7C))
+
+#### API changes
+
+- [Pull 5845](https://github.com/ReactiveX/RxJava/pull/5845): Add efficient `concatWith(Single|Maybe|Completable)` overloads to `Flowable` and `Observable`.
+- [Pull 5847](https://github.com/ReactiveX/RxJava/pull/5847): Add efficient `mergeWith(Single|Maybe|Completable)` overloads to `Flowable` and `Observable`.
+- [Pull 5860](https://github.com/ReactiveX/RxJava/pull/5860): Add `Flowable.groupBy` overload with evicting map factory.
+
+#### Documentation changes
+
+- [Pull 5824](https://github.com/ReactiveX/RxJava/pull/5824): Improve the wording of the `share()` JavaDocs.
+- [Pull 5826](https://github.com/ReactiveX/RxJava/pull/5826): Fix `Observable.blockingIterable(int)` and add `Observable.blockingLatest` marbles.
+- [Pull 5828](https://github.com/ReactiveX/RxJava/pull/5828): Document size-bounded `replay` emission's item retention property.
+- [Pull 5830](https://github.com/ReactiveX/RxJava/pull/5830): Reword the `just()` operator and reference other typical alternatives.
+- [Pull 5834](https://github.com/ReactiveX/RxJava/pull/5834): Fix copy-paste errors in `SingleSubject` JavaDoc.
+- [Pull 5837](https://github.com/ReactiveX/RxJava/pull/5837): Detail `distinct()` and `distinctUntilChanged()` in JavaDoc.
+- [Pull 5841](https://github.com/ReactiveX/RxJava/pull/5841): Improve JavaDoc of `Observer`, `SingleObserver`, `MaybeObserver` and `CompletableObserver`. 
+- [Pull 5843](https://github.com/ReactiveX/RxJava/pull/5843): Expand the JavaDocs of the `Scheduler` API. 
+- [Pull 5844](https://github.com/ReactiveX/RxJava/pull/5844): Explain the properties of the `{Flowable|Observable|Single|Maybe|Completable}Emitter` interfaces in detail.
+- [Pull 5848](https://github.com/ReactiveX/RxJava/pull/5848): Improve the wording of the `Maybe.fromCallable` JavaDoc.
+- [Pull 5856](https://github.com/ReactiveX/RxJava/pull/5856): Add finite requirement to various collector operators' JavaDoc.
+
+#### Bugfixes
+
+- [Pull 5833](https://github.com/ReactiveX/RxJava/pull/5833): Fix `Observable.switchMap` main `onError` not disposing the current inner source.
+
+#### Other changes
+
+- [Pull 5838](https://github.com/ReactiveX/RxJava/pull/5838): Added nullability annotation for completable assembly.
+- [Pull 5858](https://github.com/ReactiveX/RxJava/pull/5858): Remove unnecessary comment from `Observable.timeInterval(TimeUnit)`.
+
+### Version 2.1.9 - January 24, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex.rxjava2%7Crxjava%7C2.1.9%7C))
+
+#### API changes
+
+- [Pull 5799](https://github.com/ReactiveX/RxJava/pull/5799): Add missing `{Maybe|Single}.mergeDelayError` variants.
+
+#### Performance improvements
+
+- [Pull 5790](https://github.com/ReactiveX/RxJava/pull/5790): Improve request accounting overhead in `Flowable` `retry`/`repeat`. 
+
+#### Documentation changes
+
+- [Pull 5783](https://github.com/ReactiveX/RxJava/pull/5783): Fix JavaDoc wording of `onTerminateDetach`.
+- [Pull 5780](https://github.com/ReactiveX/RxJava/pull/5780): Improve `BehaviorSubject` JavaDoc + related clarifications. 
+- [Pull 5781](https://github.com/ReactiveX/RxJava/pull/5781): Describe `merge()` error handling.
+- [Pull 5785](https://github.com/ReactiveX/RxJava/pull/5785): Update `Maybe doOn{Success,Error,Complete}` JavaDoc.
+- [Pull 5786](https://github.com/ReactiveX/RxJava/pull/5786): Add error handling section to `merge()` operator JavaDocs.
+- [Pull 5802](https://github.com/ReactiveX/RxJava/pull/5802): Improved `XSubject` JavaDocs.
+- Marble diagram fixes to `Observable`:
+  - [Pull 5795](https://github.com/ReactiveX/RxJava/pull/5795): More marbles 01/08-a.
+  - [Pull 5797](https://github.com/ReactiveX/RxJava/pull/5797): `Observable` marble fixes 01/08-b.
+  - [Pull 5798](https://github.com/ReactiveX/RxJava/pull/5798): `Observable.replay(Function, ...)` marble fixes.
+  - [Pull 5804](https://github.com/ReactiveX/RxJava/pull/5804): More `Observable` marbles, 01/10-a.
+  - [Pull 5805](https://github.com/ReactiveX/RxJava/pull/5805): Final planned `Observable` marble additions/fixes.
+ - [Pull 5816](https://github.com/ReactiveX/RxJava/pull/5816): Add `Subject` and `Processor` marbles.
+
+#### Bugfixes
+
+- [Pull 5792](https://github.com/ReactiveX/RxJava/pull/5792): Fix `flatMap` inner fused poll crash not cancelling the upstream.
+- [Pull 5811](https://github.com/ReactiveX/RxJava/pull/5811): Fix `buffer(open, close)` not disposing indicators properly.
+
 ### Version 2.1.8 - December 27, 2017 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex.rxjava2%7Crxjava%7C2.1.8%7C))
 
 **Warning! Behavior change regarding handling illegal calls with `null` in `Processor`s and `Subject`s.**

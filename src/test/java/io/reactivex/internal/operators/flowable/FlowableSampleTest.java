@@ -24,6 +24,7 @@ import org.reactivestreams.*;
 
 import io.reactivex.*;
 import io.reactivex.exceptions.*;
+import io.reactivex.functions.Function;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.processors.*;
 import io.reactivex.schedulers.*;
@@ -338,7 +339,7 @@ public class FlowableSampleTest {
 
     @Test
     public void emitLastTimedRunCompleteRace() {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final TestScheduler scheduler = new TestScheduler();
 
             final PublishProcessor<Integer> pp = PublishProcessor.create();
@@ -386,7 +387,7 @@ public class FlowableSampleTest {
 
     @Test
     public void emitLastOtherRunCompleteRace() {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final PublishProcessor<Integer> pp = PublishProcessor.create();
             final PublishProcessor<Integer> sampler = PublishProcessor.create();
 
@@ -417,7 +418,7 @@ public class FlowableSampleTest {
 
     @Test
     public void emitLastOtherCompleteCompleteRace() {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final PublishProcessor<Integer> pp = PublishProcessor.create();
             final PublishProcessor<Integer> sampler = PublishProcessor.create();
 
@@ -443,5 +444,16 @@ public class FlowableSampleTest {
 
             ts.assertResult(1);
         }
+    }
+
+    @Test
+    public void doubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Flowable<Object>>() {
+            @Override
+            public Flowable<Object> apply(Flowable<Object> o)
+                    throws Exception {
+                return o.sample(1, TimeUnit.SECONDS);
+            }
+        });
     }
 }

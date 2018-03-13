@@ -1279,6 +1279,8 @@ public abstract class Single<T> implements SingleSource<T> {
      * value and calls a zipper function with an array of these values to return a result
      * to be emitted to downstream.
      * <p>
+     * If the {@code Iterable} of {@link SingleSource}s is empty a {@link NoSuchElementException} error is signalled after subscription.
+     * <p>
      * Note on method signature: since Java doesn't allow creating a generic array with {@code new T[]}, the
      * implementation of this operator has to create an {@code Object[]} instead. Unfortunately, a
      * {@code Function<Integer[], R>} passed to the method would trigger a {@code ClassCastException}.
@@ -1294,7 +1296,8 @@ public abstract class Single<T> implements SingleSource<T> {
      * </dl>
      * @param <T> the common value type
      * @param <R> the result value type
-     * @param sources the Iterable sequence of SingleSource instances
+     * @param sources the Iterable sequence of SingleSource instances. An empty sequence will result in an
+     *                {@code onError} signal of {@link NoSuchElementException}.
      * @param zipper the function that receives an array with values from each SingleSource
      *               and should return a value to be emitted to downstream
      * @return the new Single instance
@@ -1721,6 +1724,8 @@ public abstract class Single<T> implements SingleSource<T> {
      * value and calls a zipper function with an array of these values to return a result
      * to be emitted to downstream.
      * <p>
+     * If the array of {@link SingleSource}s is empty a {@link NoSuchElementException} error is signalled immediately.
+     * <p>
      * Note on method signature: since Java doesn't allow creating a generic array with {@code new T[]}, the
      * implementation of this operator has to create an {@code Object[]} instead. Unfortunately, a
      * {@code Function<Integer[], R>} passed to the method would trigger a {@code ClassCastException}.
@@ -1736,7 +1741,8 @@ public abstract class Single<T> implements SingleSource<T> {
      * </dl>
      * @param <T> the common value type
      * @param <R> the result value type
-     * @param sources the array of SingleSource instances
+     * @param sources the array of SingleSource instances. An empty sequence will result in an
+     *                {@code onError} signal of {@link NoSuchElementException}.
      * @param zipper the function that receives an array with values from each SingleSource
      *               and should return a value to be emitted to downstream
      * @return the new Single instance
@@ -2487,27 +2493,145 @@ public abstract class Single<T> implements SingleSource<T> {
     }
 
     /**
-     * Lifts a function to the current Single and returns a new Single that when subscribed to will pass the
-     * values of the current Single through the Operator function.
+     * <strong>This method requires advanced knowledge about building operators, please consider
+     * other standard composition methods first;</strong>
+     * Returns a {@code Single} which, when subscribed to, invokes the {@link SingleOperator#apply(SingleObserver) apply(SingleObserver)} method
+     * of the provided {@link SingleOperator} for each individual downstream {@link Single} and allows the
+     * insertion of a custom operator by accessing the downstream's {@link SingleObserver} during this subscription phase
+     * and providing a new {@code SingleObserver}, containing the custom operator's intended business logic, that will be
+     * used in the subscription process going further upstream.
      * <p>
-     * In other words, this allows chaining TaskExecutors together on a Single for acting on the values within
-     * the Single.
+     * Generally, such a new {@code SingleObserver} will wrap the downstream's {@code SingleObserver} and forwards the
+     * {@code onSuccess} and {@code onError} events from the upstream directly or according to the
+     * emission pattern the custom operator's business logic requires. In addition, such operator can intercept the
+     * flow control calls of {@code dispose} and {@code isDisposed} that would have traveled upstream and perform
+     * additional actions depending on the same business logic requirements.
      * <p>
-     * {@code task.map(...).filter(...).lift(new OperatorA()).lift(new OperatorB(...)).subscribe() }
+     * Example:
+     * <pre><code>
+     * // Step 1: Create the consumer type that will be returned by the SingleOperator.apply():
+     * 
+     * public final class CustomSingleObserver&lt;T&gt; implements SingleObserver&lt;T&gt;, Disposable {
+     *
+     *     // The donstream's SingleObserver that will receive the onXXX events
+     *     final SingleObserver&lt;? super String&gt; downstream;
+     *
+     *     // The connection to the upstream source that will call this class' onXXX methods
+     *     Disposable upstream;
+     *
+     *     // The constructor takes the downstream subscriber and usually any other parameters
+     *     public CustomSingleObserver(SingleObserver&lt;? super String&gt; downstream) {
+     *         this.downstream = downstream;
+     *     }
+     *
+     *     // In the subscription phase, the upstream sends a Disposable to this class
+     *     // and subsequently this class has to send a Disposable to the downstream.
+     *     // Note that relaying the upstream's Disposable directly is not allowed in RxJava
+     *     &#64;Override
+     *     public void onSubscribe(Disposable s) {
+     *         if (upstream != null) {
+     *             s.cancel();
+     *         } else {
+     *             upstream = s;
+     *             downstream.onSubscribe(this);
+     *         }
+     *     }
+     *
+     *     // The upstream calls this with the next item and the implementation's
+     *     // responsibility is to emit an item to the downstream based on the intended
+     *     // business logic, or if it can't do so for the particular item,
+     *     // request more from the upstream
+     *     &#64;Override
+     *     public void onSuccess(T item) {
+     *         String str = item.toString();
+     *         if (str.length() &lt; 2) {
+     *             downstream.onSuccess(str);
+     *         } else {
+     *             // Single is usually expected to produce one of the onXXX events
+     *             downstream.onError(new NoSuchElementException());
+     *         }
+     *     }
+     *
+     *     // Some operators may handle the upstream's error while others
+     *     // could just forward it to the downstream.
+     *     &#64;Override
+     *     public void onError(Throwable throwable) {
+     *         downstream.onError(throwable);
+     *     }
+     *
+     *     // Some operators may use their own resources which should be cleaned up if
+     *     // the downstream disposes the flow before it completed. Operators without
+     *     // resources can simply forward the dispose to the upstream.
+     *     // In some cases, a disposed flag may be set by this method so that other parts
+     *     // of this class may detect the dispose and stop sending events
+     *     // to the downstream.
+     *     &#64;Override
+     *     public void dispose() {
+     *         upstream.dispose();
+     *     }
+     *
+     *     // Some operators may simply forward the call to the upstream while others
+     *     // can return the disposed flag set in dispose().
+     *     &#64;Override
+     *     public boolean isDisposed() {
+     *         return upstream.isDisposed();
+     *     }
+     * }
+     *
+     * // Step 2: Create a class that implements the SingleOperator interface and
+     * //         returns the custom consumer type from above in its apply() method.
+     * //         Such class may define additional parameters to be submitted to
+     * //         the custom consumer type.
+     *
+     * final class CustomSingleOperator&lt;T&gt; implements SingleOperator&lt;String&gt; {
+     *     &#64;Override
+     *     public SingleObserver&lt;? super String&gt; apply(SingleObserver&lt;? super T&gt; upstream) {
+     *         return new CustomSingleObserver&lt;T&gt;(upstream);
+     *     }
+     * }
+     *
+     * // Step 3: Apply the custom operator via lift() in a flow by creating an instance of it
+     * //         or reusing an existing one.
+     *
+     * Single.just(5)
+     * .lift(new CustomSingleOperator&lt;Integer&gt;())
+     * .test()
+     * .assertResult("5");
+     *
+     * Single.just(15)
+     * .lift(new CustomSingleOperator&lt;Integer&gt;())
+     * .test()
+     * .assertFailure(NoSuchElementException.class);
+     * </code></pre>
      * <p>
-     * If the operator you are creating is designed to act on the item emitted by a source Single, use
-     * {@code lift}. If your operator is designed to transform the source Single as a whole (for instance, by
-     * applying a particular set of existing RxJava operators to it) use {@link #compose}.
+     * Creating custom operators can be complicated and it is recommended one consults the
+     * <a href="https://github.com/ReactiveX/RxJava/wiki/Writing-operators-for-2.0">RxJava wiki: Writing operators</a> page about
+     * the tools, requirements, rules, considerations and pitfalls of implementing them.
+     * <p>
+     * Note that implementing custom operators via this {@code lift()} method adds slightly more overhead by requiring
+     * an additional allocation and indirection per assembled flows. Instead, extending the abstract {@code Single}
+     * class and creating a {@link SingleTransformer} with it is recommended.
+     * <p>
+     * Note also that it is not possible to stop the subscription phase in {@code lift()} as the {@code apply()} method
+     * requires a non-null {@code SingleObserver} instance to be returned, which is then unconditionally subscribed to
+     * the upstream {@code Single}. For example, if the operator decided there is no reason to subscribe to the
+     * upstream source because of some optimization possibility or a failure to prepare the operator, it still has to
+     * return a {@code SingleObserver} that should immediately dispose the upstream's {@code Disposable} in its
+     * {@code onSubscribe} method. Again, using a {@code SingleTransformer} and extending the {@code Single} is
+     * a better option as {@link #subscribeActual} can decide to not subscribe to its upstream after all.
      * <dl>
-     * <dt><b>Scheduler:</b></dt>
-     * <dd>{@code lift} does not operate by default on a particular {@link Scheduler}.</dd>
+     *  <dt><b>Scheduler:</b></dt>
+     *  <dd>{@code lift} does not operate by default on a particular {@link Scheduler}, however, the
+     *  {@link SingleOperator} may use a {@code Scheduler} to support its own asynchronous behavior.</dd>
      * </dl>
      *
-     * @param <R> the downstream's value type (output)
-     * @param lift
-     *            the Operator that implements the Single-operating function to be applied to the source Single
-     * @return a Single that is the result of applying the lifted Operator to the source Single
-     * @see <a href="https://github.com/ReactiveX/RxJava/wiki/Implementing-Your-Own-Operators">RxJava wiki: Implementing Your Own Operators</a>
+     * @param <R> the output value type
+     * @param lift the {@link SingleOperator} that receives the downstream's {@code SingleObserver} and should return
+     *               a {@code SingleObserver} with custom behavior to be used as the consumer for the current
+     *               {@code Single}.
+     * @return the new Single instance
+     * @see <a href="https://github.com/ReactiveX/RxJava/wiki/Writing-operators-for-2.0">RxJava wiki: Writing operators</a>
+     * @see #compose(SingleTransformer)
      */
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
@@ -3530,9 +3654,9 @@ public abstract class Single<T> implements SingleSource<T> {
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
     public final TestObserver<T> test() {
-        TestObserver<T> ts = new TestObserver<T>();
-        subscribe(ts);
-        return ts;
+        TestObserver<T> to = new TestObserver<T>();
+        subscribe(to);
+        return to;
     }
 
     /**
@@ -3549,14 +3673,14 @@ public abstract class Single<T> implements SingleSource<T> {
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
     public final TestObserver<T> test(boolean cancelled) {
-        TestObserver<T> ts = new TestObserver<T>();
+        TestObserver<T> to = new TestObserver<T>();
 
         if (cancelled) {
-            ts.cancel();
+            to.cancel();
         }
 
-        subscribe(ts);
-        return ts;
+        subscribe(to);
+        return to;
     }
 
     private static <T> Single<T> toSingle(Flowable<T> source) {

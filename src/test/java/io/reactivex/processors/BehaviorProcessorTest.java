@@ -13,31 +13,26 @@
 
 package io.reactivex.processors;
 
-import io.reactivex.Flowable;
-import io.reactivex.Scheduler;
-import io.reactivex.TestHelper;
-import io.reactivex.exceptions.MissingBackpressureException;
-import io.reactivex.exceptions.TestException;
-import io.reactivex.functions.Function;
-import io.reactivex.internal.subscriptions.BooleanSubscription;
-import io.reactivex.plugins.RxJavaPlugins;
-import io.reactivex.schedulers.Schedulers;
-import io.reactivex.subscribers.DefaultSubscriber;
-import io.reactivex.subscribers.TestSubscriber;
-import org.junit.Assert;
-import org.junit.Test;
-import org.mockito.InOrder;
-import org.mockito.Mockito;
-import org.reactivestreams.Subscriber;
-
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.*;
+import org.mockito.*;
+import org.reactivestreams.Subscriber;
+
+import io.reactivex.*;
+import io.reactivex.exceptions.*;
+import io.reactivex.functions.Function;
+import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.plugins.RxJavaPlugins;
+import io.reactivex.processors.BehaviorProcessor.BehaviorSubscription;
+import io.reactivex.schedulers.Schedulers;
+import io.reactivex.subscribers.*;
 
 public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 
@@ -369,7 +364,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
     // FIXME RS subscribers are not allowed to throw
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery() {
-//        BehaviorSubject<String> ps = BehaviorSubject.create();
+//        BehaviorProcessor<String> ps = BehaviorProcessor.create();
 //
 //        ps.subscribe();
 //        TestSubscriber<String> ts = new TestSubscriber<String>();
@@ -391,7 +386,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 //     */
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery2() {
-//        BehaviorSubject<String> ps = BehaviorSubject.create();
+//        BehaviorProcessor<String> ps = BehaviorProcessor.create();
 //
 //        ps.subscribe();
 //        ps.subscribe();
@@ -636,7 +631,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void addRemoveRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final BehaviorProcessor<Object> p = BehaviorProcessor.create();
 
             final TestSubscriber<Object> ts = p.test();
@@ -655,14 +650,14 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
     @Test
     public void subscribeOnNextRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final BehaviorProcessor<Object> p = BehaviorProcessor.createDefault((Object)1);
 
             final TestSubscriber[] ts = { null };
@@ -681,7 +676,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
 
             if (ts[0].valueCount() == 1) {
                 ts[0].assertValue(2).assertNoErrors().assertNotComplete();
@@ -759,7 +754,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void completeSubscribeRace() throws Exception {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final BehaviorProcessor<Object> p = BehaviorProcessor.create();
 
             final TestSubscriber<Object> ts = new TestSubscriber<Object>();
@@ -786,7 +781,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void errorSubscribeRace() throws Exception {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final BehaviorProcessor<Object> p = BehaviorProcessor.create();
 
             final TestSubscriber<Object> ts = new TestSubscriber<Object>();
@@ -815,7 +810,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test(timeout = 10000)
     public void subscriberCancelOfferRace() {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final BehaviorProcessor<Integer> pp = BehaviorProcessor.create();
 
             final TestSubscriber<Integer> ts = pp.test(1);
@@ -824,7 +819,7 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
                 @Override
                 public void run() {
                     for (int i = 0; i < 2; i++) {
-                        while (!pp.offer(i)) ;
+                        while (!pp.offer(i)) { }
                     }
                 }
             };
@@ -845,4 +840,129 @@ public class BehaviorProcessorTest extends FlowableProcessorTest<Object> {
             }
         }
     }
+
+    @Test
+    public void behaviorDisposableDisposeState() {
+        BehaviorProcessor<Integer> bp = BehaviorProcessor.create();
+        bp.onNext(1);
+
+        TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+        BehaviorSubscription<Integer> bs = new BehaviorSubscription<Integer>(ts, bp);
+        ts.onSubscribe(bs);
+
+        assertFalse(bs.cancelled);
+
+        bs.cancel();
+
+        assertTrue(bs.cancelled);
+
+        bs.cancel();
+
+        assertTrue(bs.cancelled);
+
+        assertTrue(bs.test(2));
+
+        bs.emitFirst();
+
+        ts.assertEmpty();
+
+        bs.emitNext(2, 0);
+    }
+
+    @Test
+    public void emitFirstDisposeRace() {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
+
+            BehaviorProcessor<Integer> bp = BehaviorProcessor.create();
+            bp.onNext(1);
+
+            TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+            final BehaviorSubscription<Integer> bs = new BehaviorSubscription<Integer>(ts, bp);
+            ts.onSubscribe(bs);
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    bs.emitFirst();
+                }
+            };
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    bs.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+        }
+    }
+
+    @Test
+    public void emitNextDisposeRace() {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
+
+            BehaviorProcessor<Integer> bp = BehaviorProcessor.create();
+            bp.onNext(1);
+
+            TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+            final BehaviorSubscription<Integer> bs = new BehaviorSubscription<Integer>(ts, bp);
+            ts.onSubscribe(bs);
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    bs.emitNext(2, 0);
+                }
+            };
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    bs.cancel();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+        }
+    }
+
+    @Test
+    public void emittingEmitNext() {
+        BehaviorProcessor<Integer> bp = BehaviorProcessor.create();
+        bp.onNext(1);
+
+        TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+        final BehaviorSubscription<Integer> bs = new BehaviorSubscription<Integer>(ts, bp);
+        ts.onSubscribe(bs);
+
+        bs.emitting = true;
+        bs.emitNext(2, 1);
+        bs.emitNext(3, 2);
+
+        assertNotNull(bs.queue);
+    }
+
+    @Test
+    public void badRequest() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            BehaviorProcessor<Integer> bp = BehaviorProcessor.create();
+            bp.onNext(1);
+
+            TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+            final BehaviorSubscription<Integer> bs = new BehaviorSubscription<Integer>(ts, bp);
+            ts.onSubscribe(bs);
+
+            bs.request(-1);
+
+            TestHelper.assertError(errors, 0, IllegalArgumentException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
 }

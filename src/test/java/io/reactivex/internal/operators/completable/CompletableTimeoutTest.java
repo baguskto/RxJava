@@ -17,12 +17,15 @@ import static org.junit.Assert.*;
 
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Test;
 
 import io.reactivex.*;
+import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.Action;
+import io.reactivex.internal.operators.completable.CompletableTimeout.TimeOutObserver;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.*;
@@ -106,7 +109,7 @@ public class CompletableTimeoutTest {
 
     @Test
     public void errorTimeoutRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             List<Throwable> errors = TestHelper.trackPluginErrors();
 
             try {
@@ -133,7 +136,7 @@ public class CompletableTimeoutTest {
                     }
                 };
 
-                TestHelper.race(r1, r2, Schedulers.single());
+                TestHelper.race(r1, r2);
 
                 to.assertTerminated();
 
@@ -144,6 +147,28 @@ public class CompletableTimeoutTest {
             } finally {
                 RxJavaPlugins.reset();
             }
+        }
+    }
+
+    @Test
+    public void ambRace() {
+        TestObserver<Void> to = new TestObserver<Void>();
+        to.onSubscribe(Disposables.empty());
+
+        CompositeDisposable cd = new CompositeDisposable();
+        AtomicBoolean once = new AtomicBoolean();
+        TimeOutObserver a = new TimeOutObserver(cd, once, to);
+
+        a.onComplete();
+        a.onComplete();
+
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            a.onError(new TestException());
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
         }
     }
 }

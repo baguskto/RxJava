@@ -33,7 +33,6 @@ import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
 import io.reactivex.observers.*;
-import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subjects.PublishSubject;
 
 public class ObservableRetryWithPredicateTest {
@@ -278,7 +277,7 @@ public class ObservableRetryWithPredicateTest {
 
     @Test
     public void testIssue2826() {
-        TestObserver<Integer> ts = new TestObserver<Integer>();
+        TestObserver<Integer> to = new TestObserver<Integer>();
         final RuntimeException e = new RuntimeException("You shall not pass");
         final AtomicInteger c = new AtomicInteger();
         Observable.just(1).map(new Function<Integer, Integer>() {
@@ -287,11 +286,11 @@ public class ObservableRetryWithPredicateTest {
                 c.incrementAndGet();
                 throw e;
             }
-        }).retry(retry5).subscribe(ts);
+        }).retry(retry5).subscribe(to);
 
-        ts.assertTerminated();
+        to.assertTerminated();
         assertEquals(6, c.get());
-        assertEquals(Collections.singletonList(e), ts.errors());
+        assertEquals(Collections.singletonList(e), to.errors());
     }
     @Test
     public void testJustAndRetry() throws Exception {
@@ -390,7 +389,7 @@ public class ObservableRetryWithPredicateTest {
 
     @Test
     public void retryDisposeRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final PublishSubject<Integer> ps = PublishSubject.create();
 
             final TestObserver<Integer> to = ps.retry(Functions.alwaysTrue()).test();
@@ -411,7 +410,7 @@ public class ObservableRetryWithPredicateTest {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
 
             to.assertEmpty();
         }
@@ -438,7 +437,7 @@ public class ObservableRetryWithPredicateTest {
 
     @Test
     public void retryBiPredicateDisposeRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final PublishSubject<Integer> ps = PublishSubject.create();
 
             final TestObserver<Integer> to = ps.retry(new BiPredicate<Object, Object>() {
@@ -464,7 +463,7 @@ public class ObservableRetryWithPredicateTest {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
 
             to.assertEmpty();
         }

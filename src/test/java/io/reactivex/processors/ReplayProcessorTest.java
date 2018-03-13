@@ -30,6 +30,7 @@ import io.reactivex.disposables.Disposable;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.Function;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
+import io.reactivex.processors.ReplayProcessor.*;
 import io.reactivex.schedulers.*;
 import io.reactivex.subscribers.*;
 
@@ -539,7 +540,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
     // FIXME RS subscribers can't throw
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery() {
-//        ReplaySubject<String> ps = ReplaySubject.create();
+//        ReplayProcessor<String> ps = ReplayProcessor.create();
 //
 //        ps.subscribe();
 //        TestSubscriber<String> ts = new TestSubscriber<String>();
@@ -561,7 +562,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 //     */
 //    @Test
 //    public void testOnErrorThrowsDoesntPreventDelivery2() {
-//        ReplaySubject<String> ps = ReplaySubject.create();
+//        ReplayProcessor<String> ps = ReplayProcessor.create();
 //
 //        ps.subscribe();
 //        ps.subscribe();
@@ -1060,7 +1061,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void subscribeCancelRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
 
             final ReplayProcessor<Integer> rp = ReplayProcessor.create();
@@ -1079,7 +1080,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
     }
 
@@ -1097,7 +1098,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void subscribeRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final ReplayProcessor<Integer> rp = ReplayProcessor.create();
 
             Runnable r1 = new Runnable() {
@@ -1107,7 +1108,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r1, Schedulers.single());
+            TestHelper.race(r1, r1);
         }
     }
 
@@ -1126,7 +1127,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void cancelRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
 
             final ReplayProcessor<Integer> rp = ReplayProcessor.create();
             final TestSubscriber<Integer> ts1 = rp.test();
@@ -1146,7 +1147,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
 
             assertFalse(rp.hasSubscribers());
         }
@@ -1182,7 +1183,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void replayRequestRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
 
             final ReplayProcessor<Integer> rp = ReplayProcessor.createWithTimeAndSize(1, TimeUnit.DAYS, Schedulers.single(), 2);
             final TestSubscriber<Integer> ts = rp.test(0L);
@@ -1201,7 +1202,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
     }
 
@@ -1315,11 +1316,9 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
         source.test().assertResult();
     }
 
-    int raceLoop = 10000;
-
     @Test
     public void unboundedRequestCompleteRace() {
-        for (int i = 0; i < raceLoop; i++) {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
             final ReplayProcessor<Integer> source = ReplayProcessor.create();
 
             final TestSubscriber<Integer> ts = source.test(0);
@@ -1346,7 +1345,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void sizeRequestCompleteRace() {
-        for (int i = 0; i < raceLoop; i++) {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
             final ReplayProcessor<Integer> source = ReplayProcessor.createWithSize(10);
 
             final TestSubscriber<Integer> ts = source.test(0);
@@ -1373,7 +1372,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void timedRequestCompleteRace() {
-        for (int i = 0; i < raceLoop; i++) {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
             final ReplayProcessor<Integer> source = ReplayProcessor.createWithTime(2, TimeUnit.HOURS, Schedulers.single());
 
             final TestSubscriber<Integer> ts = source.test(0);
@@ -1400,7 +1399,7 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
     @Test
     public void timeAndSizeRequestCompleteRace() {
-        for (int i = 0; i < raceLoop; i++) {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
             final ReplayProcessor<Integer> source = ReplayProcessor.createWithTimeAndSize(2, TimeUnit.HOURS, Schedulers.single(), 100);
 
             final TestSubscriber<Integer> ts = source.test(0);
@@ -1541,5 +1540,142 @@ public class ReplayProcessorTest extends FlowableProcessorTest<Object> {
 
         source.subscribeWith(take1AndCancel())
         .assertResult(1);
+    }
+
+    @Test
+    public void noHeadRetentionCompleteSize() {
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithSize(1);
+
+        source.onNext(1);
+        source.onNext(2);
+        source.onComplete();
+
+        SizeBoundReplayBuffer<Integer> buf = (SizeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
+    }
+
+    @Test
+    public void noHeadRetentionErrorSize() {
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithSize(1);
+
+        source.onNext(1);
+        source.onNext(2);
+        source.onError(new TestException());
+
+        SizeBoundReplayBuffer<Integer> buf = (SizeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
+    }
+
+    @Test
+    public void unboundedCleanupBufferNoOp() {
+        ReplayProcessor<Integer> source = ReplayProcessor.create(1);
+
+        source.onNext(1);
+        source.onNext(2);
+
+        source.cleanupBuffer();
+
+        source.test().assertValuesOnly(1, 2);
+    }
+
+    @Test
+    public void noHeadRetentionSize() {
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithSize(1);
+
+        source.onNext(1);
+        source.onNext(2);
+
+        SizeBoundReplayBuffer<Integer> buf = (SizeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNotNull(buf.head.value);
+
+        source.cleanupBuffer();
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
+    }
+
+    @Test
+    public void noHeadRetentionCompleteTime() {
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithTime(1, TimeUnit.MINUTES, Schedulers.computation());
+
+        source.onNext(1);
+        source.onNext(2);
+        source.onComplete();
+
+        SizeAndTimeBoundReplayBuffer<Integer> buf = (SizeAndTimeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
+    }
+
+    @Test
+    public void noHeadRetentionErrorTime() {
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithTime(1, TimeUnit.MINUTES, Schedulers.computation());
+
+        source.onNext(1);
+        source.onNext(2);
+        source.onError(new TestException());
+
+        SizeAndTimeBoundReplayBuffer<Integer> buf = (SizeAndTimeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
+    }
+
+    @Test
+    public void noHeadRetentionTime() {
+        TestScheduler sch = new TestScheduler();
+
+        ReplayProcessor<Integer> source = ReplayProcessor.createWithTime(1, TimeUnit.MILLISECONDS, sch);
+
+        source.onNext(1);
+
+        sch.advanceTimeBy(2, TimeUnit.MILLISECONDS);
+
+        source.onNext(2);
+
+        SizeAndTimeBoundReplayBuffer<Integer> buf = (SizeAndTimeBoundReplayBuffer<Integer>)source.buffer;
+
+        assertNotNull(buf.head.value);
+
+        source.cleanupBuffer();
+
+        assertNull(buf.head.value);
+
+        Object o = buf.head;
+
+        source.cleanupBuffer();
+
+        assertSame(o, buf.head);
     }
 }

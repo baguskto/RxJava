@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.*;
 import org.reactivestreams.*;
 
 import io.reactivex.Scheduler;
-import io.reactivex.annotations.CheckReturnValue;
+import io.reactivex.annotations.*;
 import io.reactivex.internal.functions.ObjectHelper;
 import io.reactivex.internal.subscriptions.SubscriptionHelper;
 import io.reactivex.internal.util.*;
@@ -30,8 +30,31 @@ import io.reactivex.plugins.RxJavaPlugins;
 /**
  * Replays events to Subscribers.
  * <p>
- * <img width="640" height="405" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/S.ReplaySubject.png" alt="">
- *
+ * The {@code ReplayProcessor} supports the following item retainment strategies:
+ * <ul>
+ * <li>{@link #create()} and {@link #create(int)}: retains and replays all events to current and
+ * future {@code Subscriber}s.
+ * <p>
+ * <img width="640" height="269" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/ReplayProcessor.u.png" alt="">
+ * <p>
+ * <img width="640" height="345" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/ReplayProcessor.ue.png" alt="">
+ * </li>
+ * <li>{@link #createWithSize(int)}: retains at most the given number of items and replays only these
+ * latest items to new {@code Subscriber}s.
+ * <p>
+ * <img width="640" height="332" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/ReplayProcessor.n.png" alt="">
+ * </li>
+ * <li>{@link #createWithTime(long, TimeUnit, Scheduler)}: retains items no older than the specified time
+ * and replays them to new {@code Subscriber}s (which could mean all items age out).
+ * <p>
+ * <img width="640" height="415" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/ReplayProcessor.t.png" alt="">
+ * </li>
+ * <li>{@link #createWithTimeAndSize(long, TimeUnit, Scheduler, int)}: retaims no more than the given number of items
+ * which are also no older than the specified time and replays them to new {@code Subscriber}s (which could mean all items age out).
+ * <p>
+ * <img width="640" height="404" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/ReplayProcessor.nt.png" alt="">
+ * </li>
+ * </ul>
  * <p>
  * The ReplayProcessor can be created in bounded and unbounded mode. It can be bounded by
  * size (maximum number of elements retained at most) and/or time (maximum age of elements replayed).
@@ -41,6 +64,10 @@ import io.reactivex.plugins.RxJavaPlugins;
  *
  * <p>Note that Subscribers receive a continuous sequence of values after they subscribed even
  * if an individual item gets delayed due to backpressure.
+ *
+ * <p>
+ * Due to concurrency requirements, a size-bounded {@code ReplayProcessor} may hold strong references to more source
+ * emissions than specified.
  *
  * <p>
  * Example usage:
@@ -336,6 +363,24 @@ public final class ReplayProcessor<T> extends FlowableProcessor<T> {
     }
 
     /**
+     * Makes sure the item cached by the head node in a bounded
+     * ReplayProcessor is released (as it is never part of a replay).
+     * <p>
+     * By default, live bounded buffers will remember one item before
+     * the currently receivable one to ensure subscribers can always
+     * receive a continuous sequence of items. A terminated ReplayProcessor
+     * automatically releases this inaccessible item.
+     * <p>
+     * The method must be called sequentially, similar to the standard
+     * {@code onXXX} methods.
+     * @since 2.1.11 - experimental
+     */
+    @Experimental
+    public void cleanupBuffer() {
+        buffer.trimHead();
+    }
+
+    /**
      * Returns a single value the Subject currently has or null if no such value exists.
      * <p>The method is thread-safe.
      * @return a single value the Subject currently has or null if no such value exists
@@ -472,6 +517,12 @@ public final class ReplayProcessor<T> extends FlowableProcessor<T> {
         boolean isDone();
 
         Throwable getError();
+
+        /**
+         * Make sure an old inaccessible head value is released
+         * in a bounded buffer.
+         */
+        void trimHead();
     }
 
     static final class ReplaySubscription<T> extends AtomicInteger implements Subscription {
@@ -539,6 +590,11 @@ public final class ReplayProcessor<T> extends FlowableProcessor<T> {
         @Override
         public void complete() {
             done = true;
+        }
+
+        @Override
+        public void trimHead() {
+            // not applicable for an unbounded buffer
         }
 
         @Override
@@ -744,12 +800,23 @@ public final class ReplayProcessor<T> extends FlowableProcessor<T> {
         @Override
         public void error(Throwable ex) {
             error = ex;
+            trimHead();
             done = true;
         }
 
         @Override
         public void complete() {
+            trimHead();
             done = true;
+        }
+
+        @Override
+        public void trimHead() {
+            if (head.value != null) {
+                Node<T> n = new Node<T>(null);
+                n.lazySet(head.get());
+                head = n;
+            }
         }
 
         @Override
@@ -965,16 +1032,36 @@ public final class ReplayProcessor<T> extends FlowableProcessor<T> {
             for (;;) {
                 TimedNode<T> next = h.get();
                 if (next == null) {
-                    head = h;
+                    if (h.value != null) {
+                        head = new TimedNode<T>(null, 0L);
+                    } else {
+                        head = h;
+                    }
                     break;
                 }
 
                 if (next.time > limit) {
-                    head = h;
+                    if (h.value != null) {
+                        TimedNode<T> n = new TimedNode<T>(null, 0L);
+                        n.lazySet(h.get());
+                        head = n;
+                    } else {
+                        head = h;
+                    }
                     break;
                 }
 
                 h = next;
+            }
+        }
+
+
+        @Override
+        public void trimHead() {
+            if (head.value != null) {
+                TimedNode<T> n = new TimedNode<T>(null, 0L);
+                n.lazySet(head.get());
+                head = n;
             }
         }
 

@@ -628,26 +628,42 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     }
 
     /**
-     * Returns a {@link Maybe} that invokes passed function and emits its result for each new MaybeObserver that subscribes
-     * while considering {@code null} value from the callable as indication for valueless completion.
+     * Returns a {@link Maybe} that invokes the given {@link Callable} for each individual {@link MaybeObserver} that
+     * subscribes and emits the resulting non-null item via {@code onSuccess} while
+     * considering a {@code null} result from the {@code Callable} as indication for valueless completion
+     * via {@code onComplete}.
      * <p>
-     * Allows you to defer execution of passed function until MaybeObserver subscribes to the {@link Maybe}.
-     * It makes passed function "lazy".
-     * Result of the function invocation will be emitted by the {@link Maybe}.
+     * This operator allows you to defer the execution of the given {@code Callable} until a {@code MaybeObserver}
+     * subscribes to the  returned {@link Maybe}. In other terms, this source operator evaluates the given
+     * {@code Callable} "lazily".
+     * <p>
+     * Note that the {@code null} handling of this operator differs from the similar source operators in the other
+     * {@link io.reactivex base reactive classes}. Those operators signal a {@code NullPointerException} if the value returned by their
+     * {@code Callable} is {@code null} while this {@code fromCallable} considers it to indicate the
+     * returned {@code Maybe} is empty.
      * <dl>
      *   <dt><b>Scheduler:</b></dt>
      *   <dd>{@code fromCallable} does not operate by default on a particular {@link Scheduler}.</dd>
+     *   <dt><b>Error handling:</b></dt>
+     *   <dd>Any non-fatal exception thrown by {@link Callable#call()} will be forwarded to {@code onError},
+     *   except if the {@code MaybeObserver} disposed the subscription in the meantime. In this latter case,
+     *   the exception is forwarded to the global error handler via
+     *   {@link io.reactivex.plugins.RxJavaPlugins#onError(Throwable)} wrapped into a
+     *   {@link io.reactivex.exceptions.UndeliverableException UndeliverableException}.
+     *   Fatal exceptions are rethrown and usually will end up in the executing thread's
+     *   {@link java.lang.Thread.UncaughtExceptionHandler#uncaughtException(Thread, Throwable)} handler.</dd>
      * </dl>
      *
      * @param callable
-     *         function which execution should be deferred, it will be invoked when MaybeObserver will subscribe to the {@link Maybe}.
+     *         a {@link Callable} instance whose execution should be deferred and performed for each individual
+     *         {@code MaybeObserver} that subscribes to the returned {@link Maybe}.
      * @param <T>
      *         the type of the item emitted by the {@link Maybe}.
-     * @return a {@link Maybe} whose {@link MaybeObserver}s' subscriptions trigger an invocation of the given function.
+     * @return a new Maybe instance
      */
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
-    public static <T> Maybe<T> fromCallable(final Callable<? extends T> callable) {
+    public static <T> Maybe<T> fromCallable(@NonNull final Callable<? extends T> callable) {
         ObjectHelper.requireNonNull(callable, "callable is null");
         return RxJavaPlugins.onAssembly(new MaybeFromCallable<T>(callable));
     }
@@ -872,7 +888,7 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     public static <T> Flowable<T> merge(Publisher<? extends MaybeSource<? extends T>> sources, int maxConcurrency) {
         ObjectHelper.requireNonNull(sources, "source is null");
         ObjectHelper.verifyPositive(maxConcurrency, "maxConcurrency");
-        return RxJavaPlugins.onAssembly(new FlowableFlatMapPublisher(sources, MaybeToPublisher.instance(), false, maxConcurrency, Flowable.bufferSize()));
+        return RxJavaPlugins.onAssembly(new FlowableFlatMapPublisher(sources, MaybeToPublisher.instance(), false, maxConcurrency, 1));
     }
 
     /**
@@ -1206,12 +1222,11 @@ public abstract class Maybe<T> implements MaybeSource<T> {
      *         {@code source} Publisher
      * @see <a href="http://reactivex.io/documentation/operators/merge.html">ReactiveX operators documentation: Merge</a>
      */
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     @BackpressureSupport(BackpressureKind.FULL)
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
     public static <T> Flowable<T> mergeDelayError(Publisher<? extends MaybeSource<? extends T>> sources) {
-        return Flowable.fromPublisher(sources).flatMap((Function)MaybeToPublisher.instance(), true);
+        return mergeDelayError(sources, Integer.MAX_VALUE);
     }
 
 
@@ -1251,7 +1266,9 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     @SchedulerSupport(SchedulerSupport.NONE)
     @Experimental
     public static <T> Flowable<T> mergeDelayError(Publisher<? extends MaybeSource<? extends T>> sources, int maxConcurrency) {
-        return Flowable.fromPublisher(sources).flatMap((Function)MaybeToPublisher.instance(), true, maxConcurrency);
+        ObjectHelper.requireNonNull(sources, "source is null");
+        ObjectHelper.verifyPositive(maxConcurrency, "maxConcurrency");
+        return RxJavaPlugins.onAssembly(new FlowableFlatMapPublisher(sources, MaybeToPublisher.instance(), true, maxConcurrency, 1));
     }
 
     /**
@@ -3094,27 +3111,151 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     }
 
     /**
-     * Lifts a function to the current Maybe and returns a new Maybe that when subscribed to will pass the
-     * values of the current Maybe through the MaybeOperator function.
+     * <strong>This method requires advanced knowledge about building operators, please consider
+     * other standard composition methods first;</strong>
+     * Returns a {@code Maybe} which, when subscribed to, invokes the {@link MaybeOperator#apply(MaybeObserver) apply(MaybeObserver)} method
+     * of the provided {@link MaybeOperator} for each individual downstream {@link Maybe} and allows the
+     * insertion of a custom operator by accessing the downstream's {@link MaybeObserver} during this subscription phase
+     * and providing a new {@code MaybeObserver}, containing the custom operator's intended business logic, that will be
+     * used in the subscription process going further upstream.
      * <p>
-     * In other words, this allows chaining TaskExecutors together on a Maybe for acting on the values within
-     * the Maybe.
+     * Generally, such a new {@code MaybeObserver} will wrap the downstream's {@code MaybeObserver} and forwards the
+     * {@code onSuccess}, {@code onError} and {@code onComplete} events from the upstream directly or according to the
+     * emission pattern the custom operator's business logic requires. In addition, such operator can intercept the
+     * flow control calls of {@code dispose} and {@code isDisposed} that would have traveled upstream and perform
+     * additional actions depending on the same business logic requirements.
      * <p>
-     * {@code task.map(...).filter(...).lift(new OperatorA()).lift(new OperatorB(...)).subscribe() }
+     * Example:
+     * <pre><code>
+     * // Step 1: Create the consumer type that will be returned by the MaybeOperator.apply():
+     * 
+     * public final class CustomMaybeObserver&lt;T&gt; implements MaybeObserver&lt;T&gt;, Disposable {
+     *
+     *     // The donstream's MaybeObserver that will receive the onXXX events
+     *     final MaybeObserver&lt;? super String&gt; downstream;
+     *
+     *     // The connection to the upstream source that will call this class' onXXX methods
+     *     Disposable upstream;
+     *
+     *     // The constructor takes the downstream subscriber and usually any other parameters
+     *     public CustomMaybeObserver(MaybeObserver&lt;? super String&gt; downstream) {
+     *         this.downstream = downstream;
+     *     }
+     *
+     *     // In the subscription phase, the upstream sends a Disposable to this class
+     *     // and subsequently this class has to send a Disposable to the downstream.
+     *     // Note that relaying the upstream's Disposable directly is not allowed in RxJava
+     *     &#64;Override
+     *     public void onSubscribe(Disposable s) {
+     *         if (upstream != null) {
+     *             s.cancel();
+     *         } else {
+     *             upstream = s;
+     *             downstream.onSubscribe(this);
+     *         }
+     *     }
+     *
+     *     // The upstream calls this with the next item and the implementation's
+     *     // responsibility is to emit an item to the downstream based on the intended
+     *     // business logic, or if it can't do so for the particular item,
+     *     // request more from the upstream
+     *     &#64;Override
+     *     public void onSuccess(T item) {
+     *         String str = item.toString();
+     *         if (str.length() &lt; 2) {
+     *             downstream.onSuccess(str);
+     *         } else {
+     *             // Maybe is usually expected to produce one of the onXXX events
+     *             downstream.onComplete();
+     *         }
+     *     }
+     *
+     *     // Some operators may handle the upstream's error while others
+     *     // could just forward it to the downstream.
+     *     &#64;Override
+     *     public void onError(Throwable throwable) {
+     *         downstream.onError(throwable);
+     *     }
+     *
+     *     // When the upstream completes, usually the downstream should complete as well.
+     *     &#64;Override
+     *     public void onComplete() {
+     *         downstream.onComplete();
+     *     }
+     *
+     *     // Some operators may use their own resources which should be cleaned up if
+     *     // the downstream disposes the flow before it completed. Operators without
+     *     // resources can simply forward the dispose to the upstream.
+     *     // In some cases, a disposed flag may be set by this method so that other parts
+     *     // of this class may detect the dispose and stop sending events
+     *     // to the downstream.
+     *     &#64;Override
+     *     public void dispose() {
+     *         upstream.dispose();
+     *     }
+     *
+     *     // Some operators may simply forward the call to the upstream while others
+     *     // can return the disposed flag set in dispose().
+     *     &#64;Override
+     *     public boolean isDisposed() {
+     *         return upstream.isDisposed();
+     *     }
+     * }
+     *
+     * // Step 2: Create a class that implements the MaybeOperator interface and
+     * //         returns the custom consumer type from above in its apply() method.
+     * //         Such class may define additional parameters to be submitted to
+     * //         the custom consumer type.
+     *
+     * final class CustomMaybeOperator&lt;T&gt; implements MaybeOperator&lt;String&gt; {
+     *     &#64;Override
+     *     public MaybeObserver&lt;? super String&gt; apply(MaybeObserver&lt;? super T&gt; upstream) {
+     *         return new CustomMaybeObserver&lt;T&gt;(upstream);
+     *     }
+     * }
+     *
+     * // Step 3: Apply the custom operator via lift() in a flow by creating an instance of it
+     * //         or reusing an existing one.
+     *
+     * Maybe.just(5)
+     * .lift(new CustomMaybeOperator&lt;Integer&gt;())
+     * .test()
+     * .assertResult("5");
+     *
+     * Maybe.just(15)
+     * .lift(new CustomMaybeOperator&lt;Integer&gt;())
+     * .test()
+     * .assertResult();
+     * </code></pre>
      * <p>
-     * If the operator you are creating is designed to act on the item emitted by a source Maybe, use
-     * {@code lift}. If your operator is designed to transform the source Maybe as a whole (for instance, by
-     * applying a particular set of existing RxJava operators to it) use {@link #compose}.
+     * Creating custom operators can be complicated and it is recommended one consults the
+     * <a href="https://github.com/ReactiveX/RxJava/wiki/Writing-operators-for-2.0">RxJava wiki: Writing operators</a> page about
+     * the tools, requirements, rules, considerations and pitfalls of implementing them.
+     * <p>
+     * Note that implementing custom operators via this {@code lift()} method adds slightly more overhead by requiring
+     * an additional allocation and indirection per assembled flows. Instead, extending the abstract {@code Maybe}
+     * class and creating a {@link MaybeTransformer} with it is recommended.
+     * <p>
+     * Note also that it is not possible to stop the subscription phase in {@code lift()} as the {@code apply()} method
+     * requires a non-null {@code MaybeObserver} instance to be returned, which is then unconditionally subscribed to
+     * the upstream {@code Maybe}. For example, if the operator decided there is no reason to subscribe to the
+     * upstream source because of some optimization possibility or a failure to prepare the operator, it still has to
+     * return a {@code MaybeObserver} that should immediately dispose the upstream's {@code Disposable} in its
+     * {@code onSubscribe} method. Again, using a {@code MaybeTransformer} and extending the {@code Maybe} is
+     * a better option as {@link #subscribeActual} can decide to not subscribe to its upstream after all.
      * <dl>
-     * <dt><b>Scheduler:</b></dt>
-     * <dd>{@code lift} does not operate by default on a particular {@link Scheduler}.</dd>
+     *  <dt><b>Scheduler:</b></dt>
+     *  <dd>{@code lift} does not operate by default on a particular {@link Scheduler}, however, the
+     *  {@link MaybeOperator} may use a {@code Scheduler} to support its own asynchronous behavior.</dd>
      * </dl>
      *
-     * @param <R> the downstream's value type (output)
-     * @param lift
-     *            the MaybeOperator that implements the Maybe-operating function to be applied to the source Maybe
-     * @return a Maybe that is the result of applying the lifted Operator to the source Maybe
-     * @see <a href="https://github.com/ReactiveX/RxJava/wiki/Implementing-Your-Own-Operators">RxJava wiki: Implementing Your Own Operators</a>
+     * @param <R> the output value type
+     * @param lift the {@link MaybeOperator} that receives the downstream's {@code MaybeObserver} and should return
+     *               a {@code MaybeObserver} with custom behavior to be used as the consumer for the current
+     *               {@code Maybe}.
+     * @return the new Maybe instance
+     * @see <a href="https://github.com/ReactiveX/RxJava/wiki/Writing-operators-for-2.0">RxJava wiki: Writing operators</a>
+     * @see #compose(MaybeTransformer)
      */
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
@@ -4355,9 +4496,9 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
     public final TestObserver<T> test() {
-        TestObserver<T> ts = new TestObserver<T>();
-        subscribe(ts);
-        return ts;
+        TestObserver<T> to = new TestObserver<T>();
+        subscribe(to);
+        return to;
     }
 
     /**
@@ -4373,13 +4514,13 @@ public abstract class Maybe<T> implements MaybeSource<T> {
     @CheckReturnValue
     @SchedulerSupport(SchedulerSupport.NONE)
     public final TestObserver<T> test(boolean cancelled) {
-        TestObserver<T> ts = new TestObserver<T>();
+        TestObserver<T> to = new TestObserver<T>();
 
         if (cancelled) {
-            ts.cancel();
+            to.cancel();
         }
 
-        subscribe(ts);
-        return ts;
+        subscribe(to);
+        return to;
     }
 }

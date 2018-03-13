@@ -50,6 +50,19 @@ import io.reactivex.subscribers.TestSubscriber;
  */
 public enum TestHelper {
     ;
+
+    /**
+     * Number of times to loop a {@link #race(Runnable, Runnable)} invocation
+     * by default.
+     */
+    public static final int RACE_DEFAULT_LOOPS = 2500;
+
+    /**
+     * Number of times to loop a {@link #race(Runnable, Runnable)} invocation
+     * in tests with race conditions requiring more runs to check.
+     */
+    public static final int RACE_LONG_LOOPS = 10000;
+
     /**
      * Mocks a subscriber and prepares it to request Long.MAX_VALUE.
      * @param <T> the value type
@@ -204,8 +217,8 @@ public enum TestHelper {
         }
     }
 
-    public static void assertError(TestObserver<?> ts, int index, Class<? extends Throwable> clazz) {
-        Throwable ex = ts.errors().get(0);
+    public static void assertError(TestObserver<?> to, int index, Class<? extends Throwable> clazz) {
+        Throwable ex = to.errors().get(0);
         try {
             if (ex instanceof CompositeException) {
                 CompositeException ce = (CompositeException) ex;
@@ -231,8 +244,8 @@ public enum TestHelper {
         }
     }
 
-    public static void assertError(TestObserver<?> ts, int index, Class<? extends Throwable> clazz, String message) {
-        Throwable ex = ts.errors().get(0);
+    public static void assertError(TestObserver<?> to, int index, Class<? extends Throwable> clazz, String message) {
+        Throwable ex = to.errors().get(0);
         if (ex instanceof CompositeException) {
             CompositeException ce = (CompositeException) ex;
             List<Throwable> cel = ce.getExceptions();
@@ -344,6 +357,8 @@ public enum TestHelper {
      * <p>The method blocks until both have run to completion.
      * @param r1 the first runnable
      * @param r2 the second runnable
+     * @see #RACE_DEFAULT_LOOPS
+     * @see #RACE_LONG_LOOPS
      */
     public static void race(final Runnable r1, final Runnable r2) {
         race(r1, r2, Schedulers.single());
@@ -355,6 +370,8 @@ public enum TestHelper {
      * @param r1 the first runnable
      * @param r2 the second runnable
      * @param s the scheduler to use
+     * @see #RACE_DEFAULT_LOOPS
+     * @see #RACE_LONG_LOOPS
      */
     public static void race(final Runnable r1, final Runnable r2, Scheduler s) {
         final AtomicInteger count = new AtomicInteger(2);
@@ -497,14 +514,14 @@ public enum TestHelper {
     public static <T> Consumer<TestObserver<T>> observerSingleNot(final T value) {
         return new Consumer<TestObserver<T>>() {
             @Override
-            public void accept(TestObserver<T> ts) throws Exception {
-                ts
+            public void accept(TestObserver<T> to) throws Exception {
+                to
                 .assertSubscribed()
                 .assertValueCount(1)
                 .assertNoErrors()
                 .assertComplete();
 
-                T v = ts.values().get(0);
+                T v = to.values().get(0);
                 assertNotEquals(value, v);
             }
         };
@@ -2034,6 +2051,110 @@ public enum TestHelper {
     }
 
     /**
+     * Check if the given transformed reactive type reports multiple onSubscribe calls to
+     * RxJavaPlugins.
+     * @param transform the transform to drive an operator
+     */
+    public static void checkDoubleOnSubscribeCompletableToFlowable(Function<Completable, ? extends Publisher<?>> transform) {
+        List<Throwable> errors = trackPluginErrors();
+        try {
+            final Boolean[] b = { null, null };
+            final CountDownLatch cdl = new CountDownLatch(1);
+
+            Completable source = new Completable() {
+                @Override
+                protected void subscribeActual(CompletableObserver observer) {
+                    try {
+                        Disposable d1 = Disposables.empty();
+
+                        observer.onSubscribe(d1);
+
+                        Disposable d2 = Disposables.empty();
+
+                        observer.onSubscribe(d2);
+
+                        b[0] = d1.isDisposed();
+                        b[1] = d2.isDisposed();
+                    } finally {
+                        cdl.countDown();
+                    }
+                }
+            };
+
+            Publisher<?> out = transform.apply(source);
+
+            out.subscribe(NoOpConsumer.INSTANCE);
+
+            try {
+                assertTrue("Timed out", cdl.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException ex) {
+                throw ExceptionHelper.wrapOrThrow(ex);
+            }
+
+            assertEquals("First disposed?", false, b[0]);
+            assertEquals("Second not disposed?", true, b[1]);
+
+            assertError(errors, 0, IllegalStateException.class, "Disposable already set!");
+        } catch (Throwable ex) {
+            throw ExceptionHelper.wrapOrThrow(ex);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    /**
+     * Check if the given transformed reactive type reports multiple onSubscribe calls to
+     * RxJavaPlugins.
+     * @param transform the transform to drive an operator
+     */
+    public static void checkDoubleOnSubscribeCompletableToObservable(Function<Completable, ? extends ObservableSource<?>> transform) {
+        List<Throwable> errors = trackPluginErrors();
+        try {
+            final Boolean[] b = { null, null };
+            final CountDownLatch cdl = new CountDownLatch(1);
+
+            Completable source = new Completable() {
+                @Override
+                protected void subscribeActual(CompletableObserver observer) {
+                    try {
+                        Disposable d1 = Disposables.empty();
+
+                        observer.onSubscribe(d1);
+
+                        Disposable d2 = Disposables.empty();
+
+                        observer.onSubscribe(d2);
+
+                        b[0] = d1.isDisposed();
+                        b[1] = d2.isDisposed();
+                    } finally {
+                        cdl.countDown();
+                    }
+                }
+            };
+
+            ObservableSource<?> out = transform.apply(source);
+
+            out.subscribe(NoOpConsumer.INSTANCE);
+
+            try {
+                assertTrue("Timed out", cdl.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException ex) {
+                throw ExceptionHelper.wrapOrThrow(ex);
+            }
+
+            assertEquals("First disposed?", false, b[0]);
+            assertEquals("Second not disposed?", true, b[1]);
+
+            assertError(errors, 0, IllegalStateException.class, "Disposable already set!");
+        } catch (Throwable ex) {
+            throw ExceptionHelper.wrapOrThrow(ex);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    /**
      * Check if the operator applied to a Maybe source propagates dispose properly.
      * @param <T> the source value type
      * @param <U> the output value type
@@ -2150,16 +2271,16 @@ public enum TestHelper {
     /**
      * Check if the TestSubscriber has a CompositeException with the specified class
      * of Throwables in the given order.
-     * @param ts the TestSubscriber instance
+     * @param to the TestSubscriber instance
      * @param classes the array of expected Throwables inside the Composite
      */
-    public static void assertCompositeExceptions(TestObserver<?> ts, Class<? extends Throwable>... classes) {
-        ts
+    public static void assertCompositeExceptions(TestObserver<?> to, Class<? extends Throwable>... classes) {
+        to
         .assertSubscribed()
         .assertError(CompositeException.class)
         .assertNotComplete();
 
-        List<Throwable> list = compositeList(ts.errors().get(0));
+        List<Throwable> list = compositeList(to.errors().get(0));
 
         assertEquals(classes.length, list.size());
 
@@ -2171,18 +2292,18 @@ public enum TestHelper {
     /**
      * Check if the TestSubscriber has a CompositeException with the specified class
      * of Throwables in the given order.
-     * @param ts the TestSubscriber instance
+     * @param to the TestSubscriber instance
      * @param classes the array of subsequent Class and String instances representing the
      * expected Throwable class and the expected error message
      */
     @SuppressWarnings("unchecked")
-    public static void assertCompositeExceptions(TestObserver<?> ts, Object... classes) {
-        ts
+    public static void assertCompositeExceptions(TestObserver<?> to, Object... classes) {
+        to
         .assertSubscribed()
         .assertError(CompositeException.class)
         .assertNotComplete();
 
-        List<Throwable> list = compositeList(ts.errors().get(0));
+        List<Throwable> list = compositeList(to.errors().get(0));
 
         assertEquals(classes.length, list.size());
 
@@ -2236,9 +2357,9 @@ public enum TestHelper {
                         QueueDisposable<Object> qd = (QueueDisposable<Object>) d;
                         state[0] = true;
 
-                        int m = qd.requestFusion(QueueDisposable.ANY);
+                        int m = qd.requestFusion(QueueFuseable.ANY);
 
-                        if (m != QueueDisposable.NONE) {
+                        if (m != QueueFuseable.NONE) {
                             state[1] = true;
 
                             state[2] = qd.isEmpty();
@@ -2302,9 +2423,9 @@ public enum TestHelper {
                         QueueSubscription<Object> qd = (QueueSubscription<Object>) d;
                         state[0] = true;
 
-                        int m = qd.requestFusion(QueueSubscription.ANY);
+                        int m = qd.requestFusion(QueueFuseable.ANY);
 
-                        if (m != QueueSubscription.NONE) {
+                        if (m != QueueFuseable.NONE) {
                             state[1] = true;
 
                             state[2] = qd.isEmpty();
@@ -2360,11 +2481,11 @@ public enum TestHelper {
 
     /**
      * Returns an expanded error list of the given test consumer.
-     * @param to the test consumer instance
+     * @param ts the test consumer instance
      * @return the list
      */
-    public static List<Throwable> errorList(TestSubscriber<?> to) {
-        return compositeList(to.errors().get(0));
+    public static List<Throwable> errorList(TestSubscriber<?> ts) {
+        return compositeList(ts.errors().get(0));
     }
 
     /**
@@ -2436,23 +2557,23 @@ public enum TestHelper {
 
             if (o instanceof Publisher) {
                 Publisher<?> os = (Publisher<?>) o;
-                TestSubscriber<Object> to = new TestSubscriber<Object>();
+                TestSubscriber<Object> ts = new TestSubscriber<Object>();
 
-                os.subscribe(to);
+                os.subscribe(ts);
 
-                to.awaitDone(5, TimeUnit.SECONDS);
+                ts.awaitDone(5, TimeUnit.SECONDS);
 
-                to.assertSubscribed();
+                ts.assertSubscribed();
 
                 if (expected != null) {
-                    to.assertValues(expected);
+                    ts.assertValues(expected);
                 }
                 if (error) {
-                    to.assertError(TestException.class)
+                    ts.assertError(TestException.class)
                     .assertErrorMessage("error")
                     .assertNotComplete();
                 } else {
-                    to.assertNoErrors().assertComplete();
+                    ts.assertNoErrors().assertComplete();
                 }
             }
 
@@ -2595,23 +2716,23 @@ public enum TestHelper {
 
             if (o instanceof Publisher) {
                 Publisher<?> os = (Publisher<?>) o;
-                TestSubscriber<Object> to = new TestSubscriber<Object>();
+                TestSubscriber<Object> ts = new TestSubscriber<Object>();
 
-                os.subscribe(to);
+                os.subscribe(ts);
 
-                to.awaitDone(5, TimeUnit.SECONDS);
+                ts.awaitDone(5, TimeUnit.SECONDS);
 
-                to.assertSubscribed();
+                ts.assertSubscribed();
 
                 if (expected != null) {
-                    to.assertValues(expected);
+                    ts.assertValues(expected);
                 }
                 if (error) {
-                    to.assertError(TestException.class)
+                    ts.assertError(TestException.class)
                     .assertErrorMessage("error")
                     .assertNotComplete();
                 } else {
-                    to.assertNoErrors().assertComplete();
+                    ts.assertNoErrors().assertComplete();
                 }
             }
 

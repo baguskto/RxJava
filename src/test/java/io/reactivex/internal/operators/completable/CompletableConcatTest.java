@@ -69,38 +69,38 @@ public class CompletableConcatTest {
 
     @Test
     public void errorRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             List<Throwable> errors = TestHelper.trackPluginErrors();
 
             try {
-                final PublishProcessor<Integer> ps1 = PublishProcessor.create();
-                final PublishProcessor<Integer> ps2 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp1 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp2 = PublishProcessor.create();
 
-                TestObserver<Void> to = Completable.concat(ps1.map(new Function<Integer, Completable>() {
+                TestObserver<Void> to = Completable.concat(pp1.map(new Function<Integer, Completable>() {
                     @Override
                     public Completable apply(Integer v) throws Exception {
-                        return ps2.ignoreElements();
+                        return pp2.ignoreElements();
                     }
                 })).test();
 
-                ps1.onNext(1);
+                pp1.onNext(1);
 
                 final TestException ex = new TestException();
 
                 Runnable r1 = new Runnable() {
                     @Override
                     public void run() {
-                        ps1.onError(ex);
+                        pp1.onError(ex);
                     }
                 };
                 Runnable r2 = new Runnable() {
                     @Override
                     public void run() {
-                        ps2.onError(ex);
+                        pp2.onError(ex);
                     }
                 };
 
-                TestHelper.race(r1, r2, Schedulers.single());
+                TestHelper.race(r1, r2);
 
                 to.assertFailure(TestException.class);
 
@@ -203,7 +203,7 @@ public class CompletableConcatTest {
         Completable[] a = new Completable[1024];
         Arrays.fill(a, Completable.complete());
 
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
 
             final Completable c = Completable.concatArray(a);
 
@@ -223,7 +223,7 @@ public class CompletableConcatTest {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
     }
 
@@ -232,7 +232,7 @@ public class CompletableConcatTest {
         Completable[] a = new Completable[1024];
         Arrays.fill(a, Completable.complete());
 
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
 
             final Completable c = Completable.concat(Arrays.asList(a));
 
@@ -252,7 +252,7 @@ public class CompletableConcatTest {
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
     }
 

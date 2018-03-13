@@ -14,6 +14,7 @@
 package io.reactivex.subjects;
 
 import io.reactivex.annotations.CheckReturnValue;
+import io.reactivex.annotations.Nullable;
 import java.util.concurrent.atomic.*;
 
 import io.reactivex.Observer;
@@ -25,7 +26,7 @@ import io.reactivex.plugins.RxJavaPlugins;
  * A Subject that emits (multicasts) items to currently subscribed {@link Observer}s and terminal events to current
  * or late {@code Observer}s.
  * <p>
- * <img width="640" height="405" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/S.PublishSubject.png" alt="">
+ * <img width="640" height="281" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/PublishSubject.png" alt="">
  * <p>
  * This subject does not have a public constructor by design; a new empty instance of this
  * {@code PublishSubject} can be created via the {@link #create()} method.
@@ -263,6 +264,7 @@ public final class PublishSubject<T> extends Subject<T> {
     }
 
     @Override
+    @Nullable
     public Throwable getThrowable() {
         if (subscribers.get() == TERMINATED) {
             return error;

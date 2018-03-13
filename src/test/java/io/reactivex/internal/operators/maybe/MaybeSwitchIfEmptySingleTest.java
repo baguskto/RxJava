@@ -13,18 +13,16 @@
 
 package io.reactivex.internal.operators.maybe;
 
-import io.reactivex.Maybe;
-import io.reactivex.Single;
-import io.reactivex.TestHelper;
-import io.reactivex.exceptions.TestException;
-import io.reactivex.functions.Function;
-import io.reactivex.observers.TestObserver;
-import io.reactivex.processors.PublishProcessor;
-import io.reactivex.schedulers.Schedulers;
+import static org.junit.Assert.*;
+
 import org.junit.Test;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import io.reactivex.*;
+import io.reactivex.exceptions.TestException;
+import io.reactivex.functions.Function;
+import io.reactivex.internal.fuseable.HasUpstreamMaybeSource;
+import io.reactivex.observers.TestObserver;
+import io.reactivex.processors.PublishProcessor;
 
 public class MaybeSwitchIfEmptySingleTest {
 
@@ -54,11 +52,11 @@ public class MaybeSwitchIfEmptySingleTest {
     public void dispose() {
         PublishProcessor<Integer> pp = PublishProcessor.create();
 
-        TestObserver<Integer> ts = pp.singleElement().switchIfEmpty(Single.just(2)).test();
+        TestObserver<Integer> to = pp.singleElement().switchIfEmpty(Single.just(2)).test();
 
         assertTrue(pp.hasSubscribers());
 
-        ts.cancel();
+        to.cancel();
 
         assertFalse(pp.hasSubscribers());
     }
@@ -83,10 +81,10 @@ public class MaybeSwitchIfEmptySingleTest {
 
     @Test
     public void emptyCancelRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final PublishProcessor<Integer> pp = PublishProcessor.create();
 
-            final TestObserver<Integer> ts = pp.singleElement().switchIfEmpty(Single.just(2)).test();
+            final TestObserver<Integer> to = pp.singleElement().switchIfEmpty(Single.just(2)).test();
 
             Runnable r1 = new Runnable() {
                 @Override
@@ -98,11 +96,19 @@ public class MaybeSwitchIfEmptySingleTest {
             Runnable r2 = new Runnable() {
                 @Override
                 public void run() {
-                    ts.cancel();
+                    to.cancel();
                 }
             };
 
-            TestHelper.race(r1, r2, Schedulers.single());
+            TestHelper.race(r1, r2);
         }
+    }
+
+    @SuppressWarnings("rawtypes")
+    @Test
+    public void source() {
+        assertSame(Maybe.empty(),
+                ((HasUpstreamMaybeSource)(Maybe.<Integer>empty().switchIfEmpty(Single.just(1)))).source()
+        );
     }
 }

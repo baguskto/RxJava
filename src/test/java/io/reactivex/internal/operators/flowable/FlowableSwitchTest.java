@@ -723,27 +723,27 @@ public class FlowableSwitchTest {
 
     @Test
     public void switchOnNextDelayErrorWithError() {
-        PublishProcessor<Flowable<Integer>> ps = PublishProcessor.create();
+        PublishProcessor<Flowable<Integer>> pp = PublishProcessor.create();
 
-        TestSubscriber<Integer> ts = Flowable.switchOnNextDelayError(ps).test();
+        TestSubscriber<Integer> ts = Flowable.switchOnNextDelayError(pp).test();
 
-        ps.onNext(Flowable.just(1));
-        ps.onNext(Flowable.<Integer>error(new TestException()));
-        ps.onNext(Flowable.range(2, 4));
-        ps.onComplete();
+        pp.onNext(Flowable.just(1));
+        pp.onNext(Flowable.<Integer>error(new TestException()));
+        pp.onNext(Flowable.range(2, 4));
+        pp.onComplete();
 
         ts.assertFailure(TestException.class, 1, 2, 3, 4, 5);
     }
 
     @Test
     public void switchOnNextDelayErrorBufferSize() {
-        PublishProcessor<Flowable<Integer>> ps = PublishProcessor.create();
+        PublishProcessor<Flowable<Integer>> pp = PublishProcessor.create();
 
-        TestSubscriber<Integer> ts = Flowable.switchOnNextDelayError(ps, 2).test();
+        TestSubscriber<Integer> ts = Flowable.switchOnNextDelayError(pp, 2).test();
 
-        ps.onNext(Flowable.just(1));
-        ps.onNext(Flowable.range(2, 4));
-        ps.onComplete();
+        pp.onNext(Flowable.just(1));
+        pp.onNext(Flowable.range(2, 4));
+        pp.onComplete();
 
         ts.assertResult(1, 2, 3, 4, 5);
     }
@@ -821,18 +821,18 @@ public class FlowableSwitchTest {
 
     @Test
     public void nextSourceErrorRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             List<Throwable> errors = TestHelper.trackPluginErrors();
             try {
 
-                final PublishProcessor<Integer> ps1 = PublishProcessor.create();
-                final PublishProcessor<Integer> ps2 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp1 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp2 = PublishProcessor.create();
 
-                ps1.switchMap(new Function<Integer, Flowable<Integer>>() {
+                pp1.switchMap(new Function<Integer, Flowable<Integer>>() {
                     @Override
                     public Flowable<Integer> apply(Integer v) throws Exception {
                         if (v == 1) {
-                            return ps2;
+                            return pp2;
                         }
                         return Flowable.never();
                     }
@@ -842,7 +842,7 @@ public class FlowableSwitchTest {
                 Runnable r1 = new Runnable() {
                     @Override
                     public void run() {
-                        ps1.onNext(2);
+                        pp1.onNext(2);
                     }
                 };
 
@@ -851,7 +851,7 @@ public class FlowableSwitchTest {
                 Runnable r2 = new Runnable() {
                     @Override
                     public void run() {
-                        ps2.onError(ex);
+                        pp2.onError(ex);
                     }
                 };
 
@@ -868,18 +868,18 @@ public class FlowableSwitchTest {
 
     @Test
     public void outerInnerErrorRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             List<Throwable> errors = TestHelper.trackPluginErrors();
             try {
 
-                final PublishProcessor<Integer> ps1 = PublishProcessor.create();
-                final PublishProcessor<Integer> ps2 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp1 = PublishProcessor.create();
+                final PublishProcessor<Integer> pp2 = PublishProcessor.create();
 
-                ps1.switchMap(new Function<Integer, Flowable<Integer>>() {
+                pp1.switchMap(new Function<Integer, Flowable<Integer>>() {
                     @Override
                     public Flowable<Integer> apply(Integer v) throws Exception {
                         if (v == 1) {
-                            return ps2;
+                            return pp2;
                         }
                         return Flowable.never();
                     }
@@ -891,7 +891,7 @@ public class FlowableSwitchTest {
                 Runnable r1 = new Runnable() {
                     @Override
                     public void run() {
-                        ps1.onError(ex1);
+                        pp1.onError(ex1);
                     }
                 };
 
@@ -900,7 +900,7 @@ public class FlowableSwitchTest {
                 Runnable r2 = new Runnable() {
                     @Override
                     public void run() {
-                        ps2.onError(ex2);
+                        pp2.onError(ex2);
                     }
                 };
 
@@ -917,10 +917,10 @@ public class FlowableSwitchTest {
 
     @Test
     public void nextCancelRace() {
-        for (int i = 0; i < 500; i++) {
-            final PublishProcessor<Integer> ps1 = PublishProcessor.create();
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+            final PublishProcessor<Integer> pp1 = PublishProcessor.create();
 
-            final TestSubscriber<Integer> to = ps1.switchMap(new Function<Integer, Flowable<Integer>>() {
+            final TestSubscriber<Integer> ts = pp1.switchMap(new Function<Integer, Flowable<Integer>>() {
                 @Override
                 public Flowable<Integer> apply(Integer v) throws Exception {
                     return Flowable.never();
@@ -931,14 +931,14 @@ public class FlowableSwitchTest {
             Runnable r1 = new Runnable() {
                 @Override
                 public void run() {
-                    ps1.onNext(2);
+                    pp1.onNext(2);
                 }
             };
 
             Runnable r2 = new Runnable() {
                 @Override
                 public void run() {
-                    to.cancel();
+                    ts.cancel();
                 }
             };
 
@@ -1024,44 +1024,44 @@ public class FlowableSwitchTest {
 
     @Test
     public void innerCompletesReentrant() {
-        final PublishProcessor<Integer> ps = PublishProcessor.create();
+        final PublishProcessor<Integer> pp = PublishProcessor.create();
 
-        TestSubscriber<Integer> to = new TestSubscriber<Integer>() {
+        TestSubscriber<Integer> ts = new TestSubscriber<Integer>() {
             @Override
             public void onNext(Integer t) {
                 super.onNext(t);
-                ps.onComplete();
+                pp.onComplete();
             }
         };
 
         Flowable.just(1).hide()
-        .switchMap(Functions.justFunction(ps))
-        .subscribe(to);
+        .switchMap(Functions.justFunction(pp))
+        .subscribe(ts);
 
-        ps.onNext(1);
+        pp.onNext(1);
 
-        to.assertResult(1);
+        ts.assertResult(1);
     }
 
     @Test
     public void innerErrorsReentrant() {
-        final PublishProcessor<Integer> ps = PublishProcessor.create();
+        final PublishProcessor<Integer> pp = PublishProcessor.create();
 
-        TestSubscriber<Integer> to = new TestSubscriber<Integer>() {
+        TestSubscriber<Integer> ts = new TestSubscriber<Integer>() {
             @Override
             public void onNext(Integer t) {
                 super.onNext(t);
-                ps.onError(new TestException());
+                pp.onError(new TestException());
             }
         };
 
         Flowable.just(1).hide()
-        .switchMap(Functions.justFunction(ps))
-        .subscribe(to);
+        .switchMap(Functions.justFunction(pp))
+        .subscribe(ts);
 
-        ps.onNext(1);
+        pp.onNext(1);
 
-        to.assertFailure(TestException.class, 1);
+        ts.assertFailure(TestException.class, 1);
     }
 
     @Test
@@ -1114,7 +1114,7 @@ public class FlowableSwitchTest {
 
     @Test
     public void drainCancelRace() {
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
 
             final PublishProcessor<Integer> pp = PublishProcessor.create();
@@ -1152,5 +1152,26 @@ public class FlowableSwitchTest {
         })))
         .test()
         .assertFailure(TestException.class);
+    }
+
+    @Test
+    public void innerCancelledOnMainError() {
+        final PublishProcessor<Integer> main = PublishProcessor.create();
+        final PublishProcessor<Integer> inner = PublishProcessor.create();
+
+        TestSubscriber<Integer> ts = main.switchMap(Functions.justFunction(inner))
+        .test();
+
+        assertTrue(main.hasSubscribers());
+
+        main.onNext(1);
+
+        assertTrue(inner.hasSubscribers());
+
+        main.onError(new TestException());
+
+        assertFalse(inner.hasSubscribers());
+
+        ts.assertFailure(TestException.class);
     }
 }

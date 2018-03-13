@@ -13,6 +13,7 @@
 
 package io.reactivex.subjects;
 
+import io.reactivex.annotations.Nullable;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -25,6 +26,8 @@ import io.reactivex.plugins.RxJavaPlugins;
 
 /**
  * A Subject that emits the very last value followed by a completion event or the received error to Observers.
+ * <p>
+ * <img width="640" height="239" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/AsyncSubject.png" alt="">
  * <p>
  * This subject does not have a public constructor by design; a new empty instance of this
  * {@code AsyncSubject} can be created via the {@link #create()} method.
@@ -83,22 +86,22 @@ import io.reactivex.plugins.RxJavaPlugins;
  * AsyncSubject&lt;Object&gt; subject = AsyncSubject.create();
  * 
  * TestObserver&lt;Object&gt; to1 = subject.test();
- * 
+ *
  * to1.assertEmpty();
- * 
+ *
  * subject.onNext(1);
- * 
+ *
  * // AsyncSubject only emits when onComplete was called.
  * to1.assertEmpty();
  *
  * subject.onNext(2);
  * subject.onComplete();
- * 
+ *
  * // onComplete triggers the emission of the last cached item and the onComplete event.
  * to1.assertResult(2);
- * 
+ *
  * TestObserver&lt;Object&gt; to2 = subject.test();
- * 
+ *
  * // late Observers receive the last cached item too
  * to2.assertResult(2);
  * </code></pre>
@@ -311,6 +314,7 @@ public final class AsyncSubject<T> extends Subject<T> {
      * <p>The method is thread-safe.
      * @return a single value the Subject currently has or null if no such value exists
      */
+    @Nullable
     public T getValue() {
         return subscribers.get() == TERMINATED ? value : null;
     }

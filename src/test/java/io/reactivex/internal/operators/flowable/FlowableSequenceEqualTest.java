@@ -312,10 +312,10 @@ public class FlowableSequenceEqualTest {
 
     @Test
     public void onNextCancelRace() {
-        for (int i = 0; i < 500; i++) {
-            final PublishProcessor<Integer> ps = PublishProcessor.create();
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+            final PublishProcessor<Integer> pp = PublishProcessor.create();
 
-            final TestObserver<Boolean> to = Flowable.sequenceEqual(Flowable.never(), ps).test();
+            final TestObserver<Boolean> to = Flowable.sequenceEqual(Flowable.never(), pp).test();
 
             Runnable r1 = new Runnable() {
                 @Override
@@ -327,7 +327,7 @@ public class FlowableSequenceEqualTest {
             Runnable r2 = new Runnable() {
                 @Override
                 public void run() {
-                    ps.onNext(1);
+                    pp.onNext(1);
                 }
             };
 
@@ -339,28 +339,28 @@ public class FlowableSequenceEqualTest {
 
     @Test
     public void onNextCancelRaceObservable() {
-        for (int i = 0; i < 500; i++) {
-            final PublishProcessor<Integer> ps = PublishProcessor.create();
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+            final PublishProcessor<Integer> pp = PublishProcessor.create();
 
-            final TestSubscriber<Boolean> to = Flowable.sequenceEqual(Flowable.never(), ps).toFlowable().test();
+            final TestSubscriber<Boolean> ts = Flowable.sequenceEqual(Flowable.never(), pp).toFlowable().test();
 
             Runnable r1 = new Runnable() {
                 @Override
                 public void run() {
-                    to.cancel();
+                    ts.cancel();
                 }
             };
 
             Runnable r2 = new Runnable() {
                 @Override
                 public void run() {
-                    ps.onNext(1);
+                    pp.onNext(1);
                 }
             };
 
             TestHelper.race(r1, r2);
 
-            to.assertEmpty();
+            ts.assertEmpty();
         }
     }
 
@@ -414,7 +414,7 @@ public class FlowableSequenceEqualTest {
             }
         };
 
-        for (int i = 0; i < 500; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final TestSubscriber<Boolean> ts = new TestSubscriber<Boolean>();
 
             final PublishProcessor<Integer> pp = PublishProcessor.create();
@@ -518,15 +518,15 @@ public class FlowableSequenceEqualTest {
             }
         };
 
-        for (int i = 0; i < 500; i++) {
-            final TestObserver<Boolean> ts = new TestObserver<Boolean>();
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+            final TestObserver<Boolean> to = new TestObserver<Boolean>();
 
             final PublishProcessor<Integer> pp = PublishProcessor.create();
 
             boolean swap = (i & 1) == 0;
 
             Flowable.sequenceEqual(swap ? pp : neverNever, swap ? neverNever : pp)
-            .subscribe(ts);
+            .subscribe(to);
 
             Runnable r1 = new Runnable() {
                 @Override
@@ -538,13 +538,13 @@ public class FlowableSequenceEqualTest {
             Runnable r2 = new Runnable() {
                 @Override
                 public void run() {
-                    ts.cancel();
+                    to.cancel();
                 }
             };
 
             TestHelper.race(r1, r2);
 
-            ts.assertEmpty();
+            to.assertEmpty();
         }
     }
 

@@ -17,6 +17,7 @@ import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
@@ -26,12 +27,13 @@ import org.mockito.*;
 import org.reactivestreams.*;
 
 import io.reactivex.*;
-import io.reactivex.exceptions.TestException;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.plugins.RxJavaPlugins;
-import io.reactivex.processors.PublishProcessor;
+import io.reactivex.processors.*;
 import io.reactivex.schedulers.*;
 import io.reactivex.subscribers.*;
 
@@ -1098,29 +1100,29 @@ public class FlowableBufferTest {
     @Test
     public void timeAndSkipOverlap() {
 
-        PublishProcessor<Integer> ps = PublishProcessor.create();
+        PublishProcessor<Integer> pp = PublishProcessor.create();
 
         TestSubscriber<List<Integer>> ts = TestSubscriber.create();
 
-        ps.buffer(2, 1, TimeUnit.SECONDS, scheduler).subscribe(ts);
+        pp.buffer(2, 1, TimeUnit.SECONDS, scheduler).subscribe(ts);
 
-        ps.onNext(1);
-
-        scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-
-        ps.onNext(2);
+        pp.onNext(1);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onNext(3);
+        pp.onNext(2);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onNext(4);
+        pp.onNext(3);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onComplete();
+        pp.onNext(4);
+
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        pp.onComplete();
 
         ts.assertValues(
                 Arrays.asList(1, 2),
@@ -1138,29 +1140,29 @@ public class FlowableBufferTest {
     @Test
     public void timeAndSkipSkip() {
 
-        PublishProcessor<Integer> ps = PublishProcessor.create();
+        PublishProcessor<Integer> pp = PublishProcessor.create();
 
         TestSubscriber<List<Integer>> ts = TestSubscriber.create();
 
-        ps.buffer(2, 3, TimeUnit.SECONDS, scheduler).subscribe(ts);
+        pp.buffer(2, 3, TimeUnit.SECONDS, scheduler).subscribe(ts);
 
-        ps.onNext(1);
-
-        scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-
-        ps.onNext(2);
+        pp.onNext(1);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onNext(3);
+        pp.onNext(2);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onNext(4);
+        pp.onNext(3);
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        ps.onComplete();
+        pp.onNext(4);
+
+        scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        pp.onComplete();
 
         ts.assertValues(
                 Arrays.asList(1, 2),
@@ -1183,29 +1185,29 @@ public class FlowableBufferTest {
         });
 
         try {
-            PublishProcessor<Integer> ps = PublishProcessor.create();
+            PublishProcessor<Integer> pp = PublishProcessor.create();
 
             TestSubscriber<List<Integer>> ts = TestSubscriber.create();
 
-            ps.buffer(2, 1, TimeUnit.SECONDS).subscribe(ts);
+            pp.buffer(2, 1, TimeUnit.SECONDS).subscribe(ts);
 
-            ps.onNext(1);
-
-            scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-
-            ps.onNext(2);
+            pp.onNext(1);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onNext(3);
+            pp.onNext(2);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onNext(4);
+            pp.onNext(3);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onComplete();
+            pp.onNext(4);
+
+            scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
+
+            pp.onComplete();
 
             ts.assertValues(
                     Arrays.asList(1, 2),
@@ -1234,29 +1236,29 @@ public class FlowableBufferTest {
 
         try {
 
-            PublishProcessor<Integer> ps = PublishProcessor.create();
+            PublishProcessor<Integer> pp = PublishProcessor.create();
 
             TestSubscriber<List<Integer>> ts = TestSubscriber.create();
 
-            ps.buffer(2, 3, TimeUnit.SECONDS).subscribe(ts);
+            pp.buffer(2, 3, TimeUnit.SECONDS).subscribe(ts);
 
-            ps.onNext(1);
-
-            scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
-
-            ps.onNext(2);
+            pp.onNext(1);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onNext(3);
+            pp.onNext(2);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onNext(4);
+            pp.onNext(3);
 
             scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-            ps.onComplete();
+            pp.onNext(4);
+
+            scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
+
+            pp.onComplete();
 
             ts.assertValues(
                     Arrays.asList(1, 2),
@@ -1847,9 +1849,9 @@ public class FlowableBufferTest {
     public void bufferTimedExactSupplierCrash() {
         TestScheduler scheduler = new TestScheduler();
 
-        PublishProcessor<Integer> ps = PublishProcessor.create();
+        PublishProcessor<Integer> pp = PublishProcessor.create();
 
-        TestSubscriber<List<Integer>> to = ps
+        TestSubscriber<List<Integer>> ts = pp
         .buffer(1, TimeUnit.MILLISECONDS, scheduler, 1, new Callable<List<Integer>>() {
             int calls;
             @Override
@@ -1862,13 +1864,13 @@ public class FlowableBufferTest {
         }, true)
         .test();
 
-        ps.onNext(1);
+        pp.onNext(1);
 
         scheduler.advanceTimeBy(1, TimeUnit.MILLISECONDS);
 
-        ps.onNext(2);
+        pp.onNext(2);
 
-        to
+        ts
         .assertFailure(TestException.class, Arrays.asList(1));
     }
 
@@ -1877,15 +1879,15 @@ public class FlowableBufferTest {
     public void bufferTimedExactBoundedError() {
         TestScheduler scheduler = new TestScheduler();
 
-        PublishProcessor<Integer> ps = PublishProcessor.create();
+        PublishProcessor<Integer> pp = PublishProcessor.create();
 
-        TestSubscriber<List<Integer>> to = ps
+        TestSubscriber<List<Integer>> ts = pp
         .buffer(1, TimeUnit.MILLISECONDS, scheduler, 1, Functions.<Integer>createArrayList(16), true)
         .test();
 
-        ps.onError(new TestException());
+        pp.onError(new TestException());
 
-        to
+        ts
         .assertFailure(TestException.class);
     }
 
@@ -1976,22 +1978,22 @@ public class FlowableBufferTest {
 
     @Test
     public void withTimeAndSizeCapacityRace() {
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
             final TestScheduler scheduler = new TestScheduler();
 
-            final PublishProcessor<Object> ps = PublishProcessor.create();
+            final PublishProcessor<Object> pp = PublishProcessor.create();
 
-            TestSubscriber<List<Object>> ts = ps.buffer(1, TimeUnit.SECONDS, scheduler, 5).test();
+            TestSubscriber<List<Object>> ts = pp.buffer(1, TimeUnit.SECONDS, scheduler, 5).test();
 
-            ps.onNext(1);
-            ps.onNext(2);
-            ps.onNext(3);
-            ps.onNext(4);
+            pp.onNext(1);
+            pp.onNext(2);
+            pp.onNext(3);
+            pp.onNext(4);
 
             Runnable r1 = new Runnable() {
                 @Override
                 public void run() {
-                    ps.onNext(5);
+                    pp.onNext(5);
                 }
             };
 
@@ -2004,7 +2006,7 @@ public class FlowableBufferTest {
 
             TestHelper.race(r1, r2);
 
-            ps.onComplete();
+            pp.onComplete();
 
             int items = 0;
             for (List<Object> o : ts.values()) {
@@ -2073,5 +2075,486 @@ public class FlowableBufferTest {
         .assertResult(Collections.<Integer>emptyList());
 
         assertEquals(0, counter.get());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void boundaryOpenCloseDisposedOnComplete() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .test();
+
+        assertTrue(source.hasSubscribers());
+        assertTrue(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+
+        openIndicator.onNext(1);
+
+        assertTrue(openIndicator.hasSubscribers());
+        assertTrue(closeIndicator.hasSubscribers());
+
+        source.onComplete();
+
+        ts.assertResult(Collections.<Integer>emptyList());
+
+        assertFalse(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+    }
+
+    @Test
+    public void bufferedCanCompleteIfOpenNeverCompletesDropping() {
+        Flowable.range(1, 50)
+                .zipWith(Flowable.interval(5, TimeUnit.MILLISECONDS),
+                        new BiFunction<Integer, Long, Integer>() {
+                            @Override
+                            public Integer apply(Integer integer, Long aLong) {
+                                return integer;
+                            }
+                        })
+                .buffer(Flowable.interval(0,200, TimeUnit.MILLISECONDS),
+                        new Function<Long, Publisher<?>>() {
+                            @Override
+                            public Publisher<?> apply(Long a) {
+                                return Flowable.just(a).delay(100, TimeUnit.MILLISECONDS);
+                            }
+                        })
+                .test()
+                .assertSubscribed()
+                .awaitDone(3, TimeUnit.SECONDS)
+                .assertComplete();
+    }
+
+    @Test
+    public void bufferedCanCompleteIfOpenNeverCompletesOverlapping() {
+        Flowable.range(1, 50)
+                .zipWith(Flowable.interval(5, TimeUnit.MILLISECONDS),
+                        new BiFunction<Integer, Long, Integer>() {
+                            @Override
+                            public Integer apply(Integer integer, Long aLong) {
+                                return integer;
+                            }
+                        })
+                .buffer(Flowable.interval(0,100, TimeUnit.MILLISECONDS),
+                        new Function<Long, Publisher<?>>() {
+                            @Override
+                            public Publisher<?> apply(Long a) {
+                                return Flowable.just(a).delay(200, TimeUnit.MILLISECONDS);
+                            }
+                        })
+                .test()
+                .assertSubscribed()
+                .awaitDone(3, TimeUnit.SECONDS)
+                .assertComplete();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openClosemainError() {
+        Flowable.error(new TestException())
+        .buffer(Flowable.never(), Functions.justFunction(Flowable.never()))
+        .test()
+        .assertFailure(TestException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openClosebadSource() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            new Flowable<Object>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Object> s) {
+                    BooleanSubscription bs1 = new BooleanSubscription();
+                    BooleanSubscription bs2 = new BooleanSubscription();
+
+                    s.onSubscribe(bs1);
+
+                    assertFalse(bs1.isCancelled());
+                    assertFalse(bs2.isCancelled());
+
+                    s.onSubscribe(bs2);
+
+                    assertFalse(bs1.isCancelled());
+                    assertTrue(bs2.isCancelled());
+
+                    s.onError(new IOException());
+                    s.onComplete();
+                    s.onNext(1);
+                    s.onError(new TestException());
+                }
+            }
+            .buffer(Flowable.never(), Functions.justFunction(Flowable.never()))
+            .test()
+            .assertFailure(IOException.class);
+
+            TestHelper.assertError(errors, 0, ProtocolViolationException.class);
+            TestHelper.assertUndeliverable(errors, 1, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseOpenCompletes() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .test();
+
+        openIndicator.onNext(1);
+
+        assertTrue(closeIndicator.hasSubscribers());
+
+        openIndicator.onComplete();
+
+        assertTrue(source.hasSubscribers());
+        assertTrue(closeIndicator.hasSubscribers());
+
+        closeIndicator.onComplete();
+
+        assertFalse(source.hasSubscribers());
+
+        ts.assertResult(Collections.<Integer>emptyList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseOpenCompletesNoBuffers() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .test();
+
+        openIndicator.onNext(1);
+
+        assertTrue(closeIndicator.hasSubscribers());
+
+        closeIndicator.onComplete();
+
+        assertTrue(source.hasSubscribers());
+        assertTrue(openIndicator.hasSubscribers());
+
+        openIndicator.onComplete();
+
+        assertFalse(source.hasSubscribers());
+
+        ts.assertResult(Collections.<Integer>emptyList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseTake() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .take(1)
+        .test(2);
+
+        openIndicator.onNext(1);
+        closeIndicator.onComplete();
+
+        assertFalse(source.hasSubscribers());
+        assertFalse(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+
+        ts.assertResult(Collections.<Integer>emptyList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseLimit() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .limit(1)
+        .test(2);
+
+        openIndicator.onNext(1);
+        closeIndicator.onComplete();
+
+        assertFalse(source.hasSubscribers());
+        assertFalse(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+
+        ts.assertResult(Collections.<Integer>emptyList());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseEmptyBackpressure() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .test(0);
+
+        source.onComplete();
+
+        assertFalse(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+
+        ts.assertResult();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseErrorBackpressure() {
+        PublishProcessor<Integer> source = PublishProcessor.create();
+
+        PublishProcessor<Integer> openIndicator = PublishProcessor.create();
+
+        PublishProcessor<Integer> closeIndicator = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = source
+        .buffer(openIndicator, Functions.justFunction(closeIndicator))
+        .test(0);
+
+        source.onError(new TestException());
+
+        assertFalse(openIndicator.hasSubscribers());
+        assertFalse(closeIndicator.hasSubscribers());
+
+        ts.assertFailure(TestException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseBadOpen() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            Flowable.never()
+            .buffer(new Flowable<Object>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Object> s) {
+
+                    assertFalse(((Disposable)s).isDisposed());
+
+                    BooleanSubscription bs1 = new BooleanSubscription();
+                    BooleanSubscription bs2 = new BooleanSubscription();
+
+                    s.onSubscribe(bs1);
+
+                    assertFalse(bs1.isCancelled());
+                    assertFalse(bs2.isCancelled());
+
+                    s.onSubscribe(bs2);
+
+                    assertFalse(bs1.isCancelled());
+                    assertTrue(bs2.isCancelled());
+
+                    s.onError(new IOException());
+
+                    assertTrue(((Disposable)s).isDisposed());
+
+                    s.onComplete();
+                    s.onNext(1);
+                    s.onError(new TestException());
+                }
+            }, Functions.justFunction(Flowable.never()))
+            .test()
+            .assertFailure(IOException.class);
+
+            TestHelper.assertError(errors, 0, ProtocolViolationException.class);
+            TestHelper.assertUndeliverable(errors, 1, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void openCloseBadClose() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            Flowable.never()
+            .buffer(Flowable.just(1).concatWith(Flowable.<Integer>never()),
+                    Functions.justFunction(new Flowable<Object>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Object> s) {
+
+                    assertFalse(((Disposable)s).isDisposed());
+
+                    BooleanSubscription bs1 = new BooleanSubscription();
+                    BooleanSubscription bs2 = new BooleanSubscription();
+
+                    s.onSubscribe(bs1);
+
+                    assertFalse(bs1.isCancelled());
+                    assertFalse(bs2.isCancelled());
+
+                    s.onSubscribe(bs2);
+
+                    assertFalse(bs1.isCancelled());
+                    assertTrue(bs2.isCancelled());
+
+                    s.onError(new IOException());
+
+                    assertTrue(((Disposable)s).isDisposed());
+
+                    s.onComplete();
+                    s.onNext(1);
+                    s.onError(new TestException());
+                }
+            }))
+            .test()
+            .assertFailure(IOException.class);
+
+            TestHelper.assertError(errors, 0, ProtocolViolationException.class);
+            TestHelper.assertUndeliverable(errors, 1, TestException.class);
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
+
+    @Test
+    public void bufferExactBoundaryDoubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(
+                new Function<Flowable<Object>, Flowable<List<Object>>>() {
+                    @Override
+                    public Flowable<List<Object>> apply(Flowable<Object> f)
+                            throws Exception {
+                        return f.buffer(Flowable.never());
+                    }
+                }
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void bufferExactBoundarySecondBufferCrash() {
+        PublishProcessor<Integer> pp = PublishProcessor.create();
+        PublishProcessor<Integer> b = PublishProcessor.create();
+
+        TestSubscriber<List<Integer>> ts = pp.buffer(b, new Callable<List<Integer>>() {
+            int calls;
+            @Override
+            public List<Integer> call() throws Exception {
+                if (++calls == 2) {
+                    throw new TestException();
+                }
+                return new ArrayList<Integer>();
+            }
+        }).test();
+
+        b.onNext(1);
+
+        ts.assertFailure(TestException.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void bufferExactBoundaryBadSource() {
+        Flowable<Integer> pp = new Flowable<Integer>() {
+            @Override
+            protected void subscribeActual(Subscriber<? super Integer> observer) {
+                observer.onSubscribe(new BooleanSubscription());
+                observer.onComplete();
+                observer.onNext(1);
+                observer.onComplete();
+            }
+        };
+
+        final AtomicReference<Subscriber<? super Integer>> ref = new AtomicReference<Subscriber<? super Integer>>();
+        Flowable<Integer> b = new Flowable<Integer>() {
+            @Override
+            protected void subscribeActual(Subscriber<? super Integer> observer) {
+                observer.onSubscribe(new BooleanSubscription());
+                ref.set(observer);
+            }
+        };
+
+        TestSubscriber<List<Integer>> ts = pp.buffer(b).test();
+
+        ref.get().onNext(1);
+
+        ts.assertResult(Collections.<Integer>emptyList());
+    }
+
+    @Test
+    public void bufferExactBoundaryCancelUpfront() {
+        PublishProcessor<Integer> pp = PublishProcessor.create();
+        PublishProcessor<Integer> b = PublishProcessor.create();
+
+        pp.buffer(b).test(0L, true)
+        .assertEmpty();
+
+        assertFalse(pp.hasSubscribers());
+        assertFalse(b.hasSubscribers());
+    }
+
+    @Test
+    public void bufferExactBoundaryDisposed() {
+        Flowable<Integer> pp = new Flowable<Integer>() {
+            @Override
+            protected void subscribeActual(Subscriber<? super Integer> s) {
+                s.onSubscribe(new BooleanSubscription());
+
+                Disposable d = (Disposable)s;
+
+                assertFalse(d.isDisposed());
+
+                d.dispose();
+
+                assertTrue(d.isDisposed());
+            }
+        };
+        PublishProcessor<Integer> b = PublishProcessor.create();
+
+        pp.buffer(b).test();
+    }
+
+    @Test
+    public void bufferBoundaryErrorTwice() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+        try {
+            BehaviorProcessor.createDefault(1)
+            .buffer(Functions.justCallable(new Flowable<Integer>() {
+                @Override
+                protected void subscribeActual(Subscriber<? super Integer> s) {
+                    s.onSubscribe(new BooleanSubscription());
+                    s.onError(new TestException("first"));
+                    s.onError(new TestException("second"));
+                }
+            }))
+            .test()
+            .assertError(TestException.class)
+            .assertErrorMessage("first")
+            .assertNotComplete();
+
+            TestHelper.assertUndeliverable(errors, 0, TestException.class, "second");
+        } finally {
+            RxJavaPlugins.reset();
+        }
     }
 }

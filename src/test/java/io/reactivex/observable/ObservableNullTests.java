@@ -368,11 +368,11 @@ public class ObservableNullTests {
         FutureTask<Object> f = new FutureTask<Object>(Functions.EMPTY_RUNNABLE, null);
         f.run();
 
-        TestObserver<Object> ts = new TestObserver<Object>();
-        Observable.fromFuture(f).subscribe(ts);
-        ts.assertNoValues();
-        ts.assertNotComplete();
-        ts.assertError(NullPointerException.class);
+        TestObserver<Object> to = new TestObserver<Object>();
+        Observable.fromFuture(f).subscribe(to);
+        to.assertNoValues();
+        to.assertNotComplete();
+        to.assertError(NullPointerException.class);
     }
 
     @Test(expected = NullPointerException.class)
@@ -1088,7 +1088,7 @@ public class ObservableNullTests {
 
     @Test(expected = NullPointerException.class)
     public void concatWithNull() {
-        just1.concatWith(null);
+        just1.concatWith((ObservableSource<Integer>)null);
     }
 
     @Test(expected = NullPointerException.class)
@@ -1685,7 +1685,7 @@ public class ObservableNullTests {
 
     @Test(expected = NullPointerException.class)
     public void mergeWithNull() {
-        just1.mergeWith(null);
+        just1.mergeWith((ObservableSource<Integer>)null);
     }
 
     @Test(expected = NullPointerException.class)
