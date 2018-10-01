@@ -268,7 +268,7 @@ public class ObservableSwitchMapMaybeTest {
 
     @Test
     public void mapperCrash() {
-        Observable.just(1)
+        Observable.just(1).hide()
         .switchMapMaybe(new Function<Integer, MaybeSource<? extends Object>>() {
             @Override
             public MaybeSource<? extends Object> apply(Integer v)
@@ -353,10 +353,10 @@ public class ObservableSwitchMapMaybeTest {
         try {
             new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .switchMapMaybe(new Function<Integer, MaybeSource<Integer>>() {
@@ -375,7 +375,6 @@ public class ObservableSwitchMapMaybeTest {
         }
     }
 
-
     @Test
     public void innerErrorAfterTermination() {
         List<Throwable> errors = TestHelper.trackPluginErrors();
@@ -384,10 +383,10 @@ public class ObservableSwitchMapMaybeTest {
 
             TestObserver<Integer> to = new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .switchMapMaybe(new Function<Integer, MaybeSource<Integer>>() {
@@ -641,5 +640,49 @@ public class ObservableSwitchMapMaybeTest {
         ps.onComplete();
 
         to.assertResult(1, 2);
+    }
+
+    @Test
+    public void scalarMapperCrash() {
+        TestObserver<Integer> to = Observable.just(1)
+        .switchMapMaybe(new Function<Integer, MaybeSource<Integer>>() {
+            @Override
+            public MaybeSource<Integer> apply(Integer v)
+                    throws Exception {
+                        throw new TestException();
+                    }
+        })
+        .test();
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void scalarEmptySource() {
+        MaybeSubject<Integer> ms = MaybeSubject.create();
+
+        Observable.empty()
+        .switchMapMaybe(Functions.justFunction(ms))
+        .test()
+        .assertResult();
+
+        assertFalse(ms.hasObservers());
+    }
+
+    @Test
+    public void scalarSource() {
+        MaybeSubject<Integer> ms = MaybeSubject.create();
+
+        TestObserver<Integer> to = Observable.just(1)
+        .switchMapMaybe(Functions.justFunction(ms))
+        .test();
+
+        assertTrue(ms.hasObservers());
+
+        to.assertEmpty();
+
+        ms.onSuccess(2);
+
+        to.assertResult(2);
     }
 }

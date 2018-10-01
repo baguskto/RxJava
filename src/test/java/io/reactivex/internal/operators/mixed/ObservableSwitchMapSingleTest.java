@@ -237,7 +237,7 @@ public class ObservableSwitchMapSingleTest {
 
     @Test
     public void mapperCrash() {
-        Observable.just(1)
+        Observable.just(1).hide()
         .switchMapSingle(new Function<Integer, SingleSource<? extends Object>>() {
             @Override
             public SingleSource<? extends Object> apply(Integer v)
@@ -253,7 +253,7 @@ public class ObservableSwitchMapSingleTest {
     public void disposeBeforeSwitchInOnNext() {
         final TestObserver<Integer> to = new TestObserver<Integer>();
 
-        Observable.just(1)
+        Observable.just(1).hide()
         .switchMapSingle(new Function<Integer, SingleSource<Integer>>() {
             @Override
             public SingleSource<Integer> apply(Integer v)
@@ -322,10 +322,10 @@ public class ObservableSwitchMapSingleTest {
         try {
             new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .switchMapSingle(new Function<Integer, SingleSource<Integer>>() {
@@ -344,7 +344,6 @@ public class ObservableSwitchMapSingleTest {
         }
     }
 
-
     @Test
     public void innerErrorAfterTermination() {
         List<Throwable> errors = TestHelper.trackPluginErrors();
@@ -353,10 +352,10 @@ public class ObservableSwitchMapSingleTest {
 
             TestObserver<Integer> to = new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .switchMapSingle(new Function<Integer, SingleSource<Integer>>() {
@@ -609,5 +608,49 @@ public class ObservableSwitchMapSingleTest {
         ps.onComplete();
 
         to.assertResult(1, 2);
+    }
+
+    @Test
+    public void scalarMapperCrash() {
+        TestObserver<Integer> to = Observable.just(1)
+        .switchMapSingle(new Function<Integer, SingleSource<Integer>>() {
+            @Override
+            public SingleSource<Integer> apply(Integer v)
+                    throws Exception {
+                        throw new TestException();
+                    }
+        })
+        .test();
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void scalarEmptySource() {
+        SingleSubject<Integer> ss = SingleSubject.create();
+
+        Observable.empty()
+        .switchMapSingle(Functions.justFunction(ss))
+        .test()
+        .assertResult();
+
+        assertFalse(ss.hasObservers());
+    }
+
+    @Test
+    public void scalarSource() {
+        SingleSubject<Integer> ss = SingleSubject.create();
+
+        TestObserver<Integer> to = Observable.just(1)
+        .switchMapSingle(Functions.justFunction(ss))
+        .test();
+
+        assertTrue(ss.hasObservers());
+
+        to.assertEmpty();
+
+        ss.onSuccess(2);
+
+        to.assertResult(2);
     }
 }

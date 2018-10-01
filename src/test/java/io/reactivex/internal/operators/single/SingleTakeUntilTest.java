@@ -13,18 +13,21 @@
 
 package io.reactivex.internal.operators.single;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import java.util.List;
 import java.util.concurrent.CancellationException;
 
 import org.junit.Test;
+import org.reactivestreams.Subscriber;
 
 import io.reactivex.*;
 import io.reactivex.exceptions.TestException;
+import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.PublishProcessor;
+import io.reactivex.subjects.*;
 
 public class SingleTakeUntilTest {
 
@@ -55,7 +58,6 @@ public class SingleTakeUntilTest {
 
         to.assertResult(1);
     }
-
 
     @Test
     public void mainSuccessCompletable() {
@@ -273,5 +275,308 @@ public class SingleTakeUntilTest {
         } finally {
             RxJavaPlugins.reset();
         }
+    }
+
+    @Test
+    public void flowableCancelDelayed() {
+        Single.never()
+        .takeUntil(new Flowable<Integer>() {
+            @Override
+            protected void subscribeActual(Subscriber<? super Integer> s) {
+                s.onSubscribe(new BooleanSubscription());
+                s.onNext(1);
+                s.onNext(2);
+            }
+        })
+        .test()
+        .assertFailure(CancellationException.class);
+    }
+
+    @Test
+    public void untilSingleMainSuccess() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        SingleSubject<Integer> other = SingleSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        main.onSuccess(1);
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void untilSingleMainError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        SingleSubject<Integer> other = SingleSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        main.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilSingleOtherSuccess() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        SingleSubject<Integer> other = SingleSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        other.onSuccess(1);
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(CancellationException.class);
+    }
+
+    @Test
+    public void untilSingleOtherError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        SingleSubject<Integer> other = SingleSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        other.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilSingleDispose() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        SingleSubject<Integer> other = SingleSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        to.dispose();
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertEmpty();
+    }
+
+    @Test
+    public void untilPublisherMainSuccess() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        main.onSuccess(1);
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void untilPublisherMainError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        main.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilPublisherOtherOnNext() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        other.onNext(1);
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertFailure(CancellationException.class);
+    }
+
+    @Test
+    public void untilPublisherOtherOnComplete() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        other.onComplete();
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertFailure(CancellationException.class);
+    }
+
+    @Test
+    public void untilPublisherOtherError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        other.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilPublisherDispose() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        PublishProcessor<Integer> other = PublishProcessor.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasSubscribers());
+
+        to.dispose();
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasSubscribers());
+
+        to.assertEmpty();
+    }
+
+    @Test
+    public void untilCompletableMainSuccess() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        CompletableSubject other = CompletableSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        main.onSuccess(1);
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertResult(1);
+    }
+
+    @Test
+    public void untilCompletableMainError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        CompletableSubject other = CompletableSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        main.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilCompletableOtherOnComplete() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        CompletableSubject other = CompletableSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        other.onComplete();
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(CancellationException.class);
+    }
+
+    @Test
+    public void untilCompletableOtherError() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        CompletableSubject other = CompletableSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        other.onError(new TestException());
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
+    public void untilCompletableDispose() {
+        SingleSubject<Integer> main = SingleSubject.create();
+        CompletableSubject other = CompletableSubject.create();
+
+        TestObserver<Integer> to = main.takeUntil(other).test();
+
+        assertTrue("Main no observers?", main.hasObservers());
+        assertTrue("Other no observers?", other.hasObservers());
+
+        to.dispose();
+
+        assertFalse("Main has observers?", main.hasObservers());
+        assertFalse("Other has observers?", other.hasObservers());
+
+        to.assertEmpty();
     }
 }

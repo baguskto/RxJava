@@ -30,6 +30,7 @@ import io.reactivex.disposables.Disposable;
 import io.reactivex.exceptions.*;
 import io.reactivex.functions.Function;
 import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.operators.flowable.FlowableDebounceTimed.*;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.processors.*;
@@ -170,10 +171,10 @@ public class FlowableDebounceTest {
             }
         };
 
-        Subscriber<Object> o = TestHelper.mockSubscriber();
-        InOrder inOrder = inOrder(o);
+        Subscriber<Object> subscriber = TestHelper.mockSubscriber();
+        InOrder inOrder = inOrder(subscriber);
 
-        source.debounce(debounceSel).subscribe(o);
+        source.debounce(debounceSel).subscribe(subscriber);
 
         source.onNext(1);
         debouncer.onNext(1);
@@ -187,12 +188,12 @@ public class FlowableDebounceTest {
         source.onNext(5);
         source.onComplete();
 
-        inOrder.verify(o).onNext(1);
-        inOrder.verify(o).onNext(4);
-        inOrder.verify(o).onNext(5);
-        inOrder.verify(o).onComplete();
+        inOrder.verify(subscriber).onNext(1);
+        inOrder.verify(subscriber).onNext(4);
+        inOrder.verify(subscriber).onNext(5);
+        inOrder.verify(subscriber).onComplete();
 
-        verify(o, never()).onError(any(Throwable.class));
+        verify(subscriber, never()).onError(any(Throwable.class));
     }
 
     @Test
@@ -206,15 +207,15 @@ public class FlowableDebounceTest {
             }
         };
 
-        Subscriber<Object> o = TestHelper.mockSubscriber();
+        Subscriber<Object> subscriber = TestHelper.mockSubscriber();
 
-        source.debounce(debounceSel).subscribe(o);
+        source.debounce(debounceSel).subscribe(subscriber);
 
         source.onNext(1);
 
-        verify(o, never()).onNext(any());
-        verify(o, never()).onComplete();
-        verify(o).onError(any(TestException.class));
+        verify(subscriber, never()).onNext(any());
+        verify(subscriber, never()).onComplete();
+        verify(subscriber).onError(any(TestException.class));
     }
 
     @Test
@@ -228,33 +229,35 @@ public class FlowableDebounceTest {
             }
         };
 
-        Subscriber<Object> o = TestHelper.mockSubscriber();
+        Subscriber<Object> subscriber = TestHelper.mockSubscriber();
 
-        source.debounce(debounceSel).subscribe(o);
+        source.debounce(debounceSel).subscribe(subscriber);
 
         source.onNext(1);
 
-        verify(o, never()).onNext(any());
-        verify(o, never()).onComplete();
-        verify(o).onError(any(TestException.class));
+        verify(subscriber, never()).onNext(any());
+        verify(subscriber, never()).onComplete();
+        verify(subscriber).onError(any(TestException.class));
     }
+
     @Test
     public void debounceTimedLastIsNotLost() {
         PublishProcessor<Integer> source = PublishProcessor.create();
 
-        Subscriber<Object> o = TestHelper.mockSubscriber();
+        Subscriber<Object> subscriber = TestHelper.mockSubscriber();
 
-        source.debounce(100, TimeUnit.MILLISECONDS, scheduler).subscribe(o);
+        source.debounce(100, TimeUnit.MILLISECONDS, scheduler).subscribe(subscriber);
 
         source.onNext(1);
         source.onComplete();
 
         scheduler.advanceTimeBy(1, TimeUnit.SECONDS);
 
-        verify(o).onNext(1);
-        verify(o).onComplete();
-        verify(o, never()).onError(any(Throwable.class));
+        verify(subscriber).onNext(1);
+        verify(subscriber).onComplete();
+        verify(subscriber, never()).onError(any(Throwable.class));
     }
+
     @Test
     public void debounceSelectorLastIsNotLost() {
         PublishProcessor<Integer> source = PublishProcessor.create();
@@ -268,18 +271,18 @@ public class FlowableDebounceTest {
             }
         };
 
-        Subscriber<Object> o = TestHelper.mockSubscriber();
+        Subscriber<Object> subscriber = TestHelper.mockSubscriber();
 
-        source.debounce(debounceSel).subscribe(o);
+        source.debounce(debounceSel).subscribe(subscriber);
 
         source.onNext(1);
         source.onComplete();
 
         debouncer.onComplete();
 
-        verify(o).onNext(1);
-        verify(o).onComplete();
-        verify(o, never()).onError(any(Throwable.class));
+        verify(subscriber).onNext(1);
+        verify(subscriber).onComplete();
+        verify(subscriber, never()).onError(any(Throwable.class));
     }
 
     @Test
@@ -362,8 +365,8 @@ public class FlowableDebounceTest {
     public void badSourceSelector() {
         TestHelper.checkBadSourceFlowable(new Function<Flowable<Integer>, Object>() {
             @Override
-            public Object apply(Flowable<Integer> o) throws Exception {
-                return o.debounce(new Function<Integer, Flowable<Long>>() {
+            public Object apply(Flowable<Integer> f) throws Exception {
+                return f.debounce(new Function<Integer, Flowable<Long>>() {
                     @Override
                     public Flowable<Long> apply(Integer v) throws Exception {
                         return Flowable.timer(1, TimeUnit.SECONDS);
@@ -374,11 +377,11 @@ public class FlowableDebounceTest {
 
         TestHelper.checkBadSourceFlowable(new Function<Flowable<Integer>, Object>() {
             @Override
-            public Object apply(final Flowable<Integer> o) throws Exception {
+            public Object apply(final Flowable<Integer> f) throws Exception {
                 return Flowable.just(1).debounce(new Function<Integer, Flowable<Integer>>() {
                     @Override
                     public Flowable<Integer> apply(Integer v) throws Exception {
-                        return o;
+                        return f;
                     }
                 });
             }
@@ -414,8 +417,8 @@ public class FlowableDebounceTest {
     public void doubleOnSubscribe() {
         TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Flowable<Object>>() {
             @Override
-            public Flowable<Object> apply(Flowable<Object> o) throws Exception {
-                return o.debounce(Functions.justFunction(Flowable.never()));
+            public Flowable<Object> apply(Flowable<Object> f) throws Exception {
+                return f.debounce(Functions.justFunction(Flowable.never()));
             }
         });
     }
@@ -486,5 +489,62 @@ public class FlowableDebounceTest {
     @Test
     public void badRequestReported() {
         TestHelper.assertBadRequestReported(Flowable.never().debounce(Functions.justFunction(Flowable.never())));
+    }
+
+    @Test
+    public void timedDoubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Publisher<Object>>() {
+            @Override
+            public Publisher<Object> apply(Flowable<Object> f)
+                    throws Exception {
+                return f.debounce(1, TimeUnit.SECONDS);
+            }
+        });
+    }
+
+    @Test
+    public void timedDisposedIgnoredBySource() {
+        final TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+
+        new Flowable<Integer>() {
+            @Override
+            protected void subscribeActual(
+                    org.reactivestreams.Subscriber<? super Integer> s) {
+                s.onSubscribe(new BooleanSubscription());
+                ts.cancel();
+                s.onNext(1);
+                s.onComplete();
+            }
+        }
+        .debounce(1, TimeUnit.SECONDS)
+        .subscribe(ts);
+    }
+
+    @Test
+    public void timedBadRequest() {
+        TestHelper.assertBadRequestReported(Flowable.never().debounce(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void timedLateEmit() {
+        TestSubscriber<Integer> ts = new TestSubscriber<Integer>();
+        DebounceTimedSubscriber<Integer> sub = new DebounceTimedSubscriber<Integer>(
+                ts, 1, TimeUnit.SECONDS, new TestScheduler().createWorker());
+
+        sub.onSubscribe(new BooleanSubscription());
+
+        DebounceEmitter<Integer> de = new DebounceEmitter<Integer>(1, 50, sub);
+        de.emit();
+        de.emit();
+
+        ts.assertEmpty();
+    }
+
+    @Test
+    public void timedError() {
+        Flowable.error(new TestException())
+        .debounce(1, TimeUnit.SECONDS)
+        .test()
+        .assertFailure(TestException.class);
     }
 }

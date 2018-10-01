@@ -25,6 +25,8 @@ import io.reactivex.disposables.Disposables;
 import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.operators.mixed.ObservableConcatMapSingle.ConcatMapSingleMainObserver;
+import io.reactivex.internal.util.ErrorMode;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.subjects.*;
@@ -153,10 +155,10 @@ public class ObservableConcatMapSingleTest {
         try {
             new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .concatMapSingle(
@@ -256,8 +258,23 @@ public class ObservableConcatMapSingleTest {
     }
 
     @Test
+    public void mapperCrashScalar() {
+        TestObserver<Object> to = Observable.just(1)
+        .concatMapSingle(new Function<Integer, SingleSource<? extends Object>>() {
+            @Override
+            public SingleSource<? extends Object> apply(Integer v)
+                    throws Exception {
+                        throw new TestException();
+                    }
+        })
+        .test();
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
     public void disposed() {
-        TestHelper.checkDisposed(Observable.just(1)
+        TestHelper.checkDisposed(Observable.just(1).hide()
                 .concatMapSingle(Functions.justFunction(Single.never()))
         );
     }
@@ -283,4 +300,88 @@ public class ObservableConcatMapSingleTest {
 
         to.assertResult(1, 1);
     }
+
+    @Test
+    public void scalarEmptySource() {
+        SingleSubject<Integer> ss = SingleSubject.create();
+
+        Observable.empty()
+        .concatMapSingle(Functions.justFunction(ss))
+        .test()
+        .assertResult();
+
+        assertFalse(ss.hasObservers());
+    }
+
+    @Test(timeout = 10000)
+    public void cancelNoConcurrentClean() {
+        TestObserver<Integer> to = new TestObserver<Integer>();
+        ConcatMapSingleMainObserver<Integer, Integer> operator =
+                new ConcatMapSingleMainObserver<Integer, Integer>(
+                        to, Functions.justFunction(Single.<Integer>never()), 16, ErrorMode.IMMEDIATE);
+
+        operator.onSubscribe(Disposables.empty());
+
+        operator.queue.offer(1);
+
+        operator.getAndIncrement();
+
+        to.cancel();
+
+        assertFalse(operator.queue.isEmpty());
+
+        operator.addAndGet(-2);
+
+        operator.dispose();
+
+        assertTrue(operator.queue.isEmpty());
+    }
+
+    @Test
+    public void checkUnboundedInnerQueue() {
+        SingleSubject<Integer> ss = SingleSubject.create();
+
+        @SuppressWarnings("unchecked")
+        TestObserver<Integer> to = Observable
+                .fromArray(ss, Single.just(2), Single.just(3), Single.just(4))
+                .concatMapSingle(Functions.<Single<Integer>>identity(), 2)
+                .test();
+
+        to.assertEmpty();
+
+        ss.onSuccess(1);
+
+        to.assertResult(1, 2, 3, 4);
+    }
+
+    @Test
+    public void innerSuccessDisposeRace() {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
+
+            final SingleSubject<Integer> ss = SingleSubject.create();
+
+            final TestObserver<Integer> to = Observable.just(1)
+                    .hide()
+                    .concatMapSingle(Functions.justFunction(ss))
+                    .test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ss.onSuccess(1);
+                }
+            };
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    to.dispose();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+
+            to.assertNoErrors();
+        }
+    }
+
 }

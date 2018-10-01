@@ -14,6 +14,7 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.List;
@@ -26,14 +27,14 @@ import org.mockito.InOrder;
 import io.reactivex.*;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.*;
-import io.reactivex.functions.Consumer;
-import io.reactivex.functions.Function;
+import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.schedulers.ImmediateThinScheduler;
 import io.reactivex.internal.util.ExceptionHelper;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
-import io.reactivex.schedulers.TestScheduler;
-import io.reactivex.subjects.PublishSubject;
+import io.reactivex.schedulers.*;
+import io.reactivex.subjects.*;
 
 public class ObservableSwitchTest {
 
@@ -483,7 +484,6 @@ public class ObservableSwitchTest {
         Assert.assertEquals(250, to.valueCount());
     }
 
-
     @Test
     public void delayErrors() {
         PublishSubject<ObservableSource<Integer>> source = PublishSubject.create();
@@ -607,7 +607,6 @@ public class ObservableSwitchTest {
 
     }
 
-
     @Test
     public void switchMapInnerCancelled() {
         PublishSubject<Integer> ps = PublishSubject.create();
@@ -663,9 +662,9 @@ public class ObservableSwitchTest {
             public SingleSource<Integer> apply(Object v) throws Exception {
                 return new SingleSource<Integer>() {
                     @Override
-                    public void subscribe(SingleObserver<? super Integer> s) {
-                        s.onSubscribe(Disposables.empty());
-                        s.onSuccess(1);
+                    public void subscribe(SingleObserver<? super Integer> observer) {
+                        observer.onSubscribe(Disposables.empty());
+                        observer.onSuccess(1);
                     }
                 };
             }
@@ -1053,5 +1052,144 @@ public class ObservableSwitchTest {
                 RxJavaPlugins.reset();
             }
         }
+    }
+
+    @Test
+    public void asyncFused() {
+        Observable.just(1).hide()
+        .switchMap(Functions.justFunction(
+                Observable.range(1, 5)
+                .observeOn(ImmediateThinScheduler.INSTANCE)
+        ))
+        .test()
+        .assertResult(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    public void syncFusedMaybe() {
+        Observable.range(1, 5).hide()
+        .switchMap(Functions.justFunction(
+                Maybe.just(1).toObservable()
+        ))
+        .test()
+        .assertResult(1, 1, 1, 1, 1);
+    }
+
+    @Test
+    public void syncFusedSingle() {
+        Observable.range(1, 5).hide()
+        .switchMap(Functions.justFunction(
+                Single.just(1).toObservable()
+        ))
+        .test()
+        .assertResult(1, 1, 1, 1, 1);
+    }
+
+    @Test
+    public void syncFusedCompletable() {
+        Observable.range(1, 5).hide()
+        .switchMap(Functions.justFunction(
+                Completable.complete().toObservable()
+        ))
+        .test()
+        .assertResult();
+    }
+
+    @Test
+    public void asyncFusedRejecting() {
+        Observable.just(1).hide()
+        .switchMap(Functions.justFunction(
+                TestHelper.rejectObservableFusion()
+        ))
+        .test()
+        .assertEmpty();
+    }
+
+    @Test
+    public void asyncFusedPollCrash() {
+        PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = ps
+        .switchMap(Functions.justFunction(
+                Observable.range(1, 5)
+                .observeOn(ImmediateThinScheduler.INSTANCE)
+                .map(new Function<Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer v) throws Exception {
+                        throw new TestException();
+                    }
+                })
+                .compose(TestHelper.<Integer>observableStripBoundary())
+        ))
+        .test();
+
+        to.assertEmpty();
+
+        ps.onNext(1);
+
+        to
+        .assertFailure(TestException.class);
+
+        assertFalse(ps.hasObservers());
+    }
+
+    @Test
+    public void asyncFusedPollCrashDelayError() {
+        PublishSubject<Integer> ps = PublishSubject.create();
+
+        TestObserver<Integer> to = ps
+        .switchMapDelayError(Functions.justFunction(
+                Observable.range(1, 5)
+                .observeOn(ImmediateThinScheduler.INSTANCE)
+                .map(new Function<Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer v) throws Exception {
+                        throw new TestException();
+                    }
+                })
+                .compose(TestHelper.<Integer>observableStripBoundary())
+        ))
+        .test();
+
+        to.assertEmpty();
+
+        ps.onNext(1);
+
+        assertTrue(ps.hasObservers());
+
+        to.assertEmpty();
+
+        ps.onComplete();
+
+        to
+        .assertFailure(TestException.class);
+
+        assertFalse(ps.hasObservers());
+    }
+
+    @Test
+    public void fusedBoundary() {
+        String thread = Thread.currentThread().getName();
+
+        Observable.range(1, 10000)
+        .switchMap(new Function<Integer, ObservableSource<? extends Object>>() {
+            @Override
+            public ObservableSource<? extends Object> apply(Integer v)
+                    throws Exception {
+                return Observable.just(2).hide()
+                .observeOn(Schedulers.single())
+                .map(new Function<Integer, Object>() {
+                    @Override
+                    public Object apply(Integer w) throws Exception {
+                        return Thread.currentThread().getName();
+                    }
+                });
+            }
+        })
+        .test()
+        .awaitDone(5, TimeUnit.SECONDS)
+        .assertNever(thread)
+        .assertNoErrors()
+        .assertComplete();
     }
 }

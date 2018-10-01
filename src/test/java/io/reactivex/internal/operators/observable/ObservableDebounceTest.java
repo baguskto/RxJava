@@ -13,7 +13,6 @@
 
 package io.reactivex.internal.operators.observable;
 
-
 import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -24,12 +23,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.*;
 import org.mockito.InOrder;
+import org.reactivestreams.Publisher;
 
 import io.reactivex.*;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.Function;
 import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.operators.observable.ObservableDebounceTimed.*;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.TestScheduler;
@@ -237,6 +238,7 @@ public class ObservableDebounceTest {
         verify(o, never()).onComplete();
         verify(o).onError(any(TestException.class));
     }
+
     @Test
     public void debounceTimedLastIsNotLost() {
         PublishSubject<Integer> source = PublishSubject.create();
@@ -254,6 +256,7 @@ public class ObservableDebounceTest {
         verify(o).onComplete();
         verify(o, never()).onError(any(Throwable.class));
     }
+
     @Test
     public void debounceSelectorLastIsNotLost() {
         PublishSubject<Integer> source = PublishSubject.create();
@@ -449,5 +452,57 @@ public class ObservableDebounceTest {
 
         to
         .assertResult(2);
+    }
+
+    @Test
+    public void timedDoubleOnSubscribe() {
+        TestHelper.checkDoubleOnSubscribeFlowable(new Function<Flowable<Object>, Publisher<Object>>() {
+            @Override
+            public Publisher<Object> apply(Flowable<Object> f)
+                    throws Exception {
+                return f.debounce(1, TimeUnit.SECONDS);
+            }
+        });
+    }
+
+    @Test
+    public void timedDisposedIgnoredBySource() {
+        final TestObserver<Integer> to = new TestObserver<Integer>();
+
+        new Observable<Integer>() {
+            @Override
+            protected void subscribeActual(
+                    Observer<? super Integer> observer) {
+                observer.onSubscribe(Disposables.empty());
+                to.cancel();
+                observer.onNext(1);
+                observer.onComplete();
+            }
+        }
+        .debounce(1, TimeUnit.SECONDS)
+        .subscribe(to);
+    }
+
+    @Test
+    public void timedLateEmit() {
+        TestObserver<Integer> to = new TestObserver<Integer>();
+        DebounceTimedObserver<Integer> sub = new DebounceTimedObserver<Integer>(
+                to, 1, TimeUnit.SECONDS, new TestScheduler().createWorker());
+
+        sub.onSubscribe(Disposables.empty());
+
+        DebounceEmitter<Integer> de = new DebounceEmitter<Integer>(1, 50, sub);
+        de.run();
+        de.run();
+
+        to.assertEmpty();
+    }
+
+    @Test
+    public void timedError() {
+        Observable.error(new TestException())
+        .debounce(1, TimeUnit.SECONDS)
+        .test()
+        .assertFailure(TestException.class);
     }
 }

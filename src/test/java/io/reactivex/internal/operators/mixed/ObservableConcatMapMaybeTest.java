@@ -26,6 +26,8 @@ import io.reactivex.disposables.Disposables;
 import io.reactivex.exceptions.*;
 import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
+import io.reactivex.internal.operators.mixed.ObservableConcatMapMaybe.ConcatMapMaybeMainObserver;
+import io.reactivex.internal.util.ErrorMode;
 import io.reactivex.observers.TestObserver;
 import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
@@ -238,10 +240,10 @@ public class ObservableConcatMapMaybeTest {
         try {
             new Observable<Integer>() {
                 @Override
-                protected void subscribeActual(Observer<? super Integer> s) {
-                    s.onSubscribe(Disposables.empty());
-                    s.onNext(1);
-                    s.onError(new TestException("outer"));
+                protected void subscribeActual(Observer<? super Integer> observer) {
+                    observer.onSubscribe(Disposables.empty());
+                    observer.onNext(1);
+                    observer.onError(new TestException("outer"));
                 }
             }
             .concatMapMaybe(
@@ -341,9 +343,107 @@ public class ObservableConcatMapMaybeTest {
     }
 
     @Test
+    public void scalarMapperCrash() {
+        TestObserver<Object> to = Observable.just(1)
+        .concatMapMaybe(new Function<Integer, MaybeSource<? extends Object>>() {
+            @Override
+            public MaybeSource<? extends Object> apply(Integer v)
+                    throws Exception {
+                        throw new TestException();
+                    }
+        })
+        .test();
+
+        to.assertFailure(TestException.class);
+    }
+
+    @Test
     public void disposed() {
-        TestHelper.checkDisposed(Observable.just(1)
+        TestHelper.checkDisposed(Observable.just(1).hide()
                 .concatMapMaybe(Functions.justFunction(Maybe.never()))
         );
+    }
+
+    @Test
+    public void scalarEmptySource() {
+        MaybeSubject<Integer> ms = MaybeSubject.create();
+
+        Observable.empty()
+        .concatMapMaybe(Functions.justFunction(ms))
+        .test()
+        .assertResult();
+
+        assertFalse(ms.hasObservers());
+    }
+
+    @Test(timeout = 10000)
+    public void cancelNoConcurrentClean() {
+        TestObserver<Integer> to = new TestObserver<Integer>();
+        ConcatMapMaybeMainObserver<Integer, Integer> operator =
+                new ConcatMapMaybeMainObserver<Integer, Integer>(
+                        to, Functions.justFunction(Maybe.<Integer>never()), 16, ErrorMode.IMMEDIATE);
+
+        operator.onSubscribe(Disposables.empty());
+
+        operator.queue.offer(1);
+
+        operator.getAndIncrement();
+
+        to.dispose();
+
+        assertFalse(operator.queue.isEmpty());
+
+        operator.addAndGet(-2);
+
+        operator.dispose();
+
+        assertTrue(operator.queue.isEmpty());
+    }
+
+    @Test
+    public void checkUnboundedInnerQueue() {
+        MaybeSubject<Integer> ms = MaybeSubject.create();
+
+        @SuppressWarnings("unchecked")
+        TestObserver<Integer> to = Observable
+                .fromArray(ms, Maybe.just(2), Maybe.just(3), Maybe.just(4))
+                .concatMapMaybe(Functions.<Maybe<Integer>>identity(), 2)
+                .test();
+
+        to.assertEmpty();
+
+        ms.onSuccess(1);
+
+        to.assertResult(1, 2, 3, 4);
+    }
+
+    @Test
+    public void innerSuccessDisposeRace() {
+        for (int i = 0; i < TestHelper.RACE_LONG_LOOPS; i++) {
+
+            final MaybeSubject<Integer> ms = MaybeSubject.create();
+
+            final TestObserver<Integer> to = Observable.just(1)
+                    .hide()
+                    .concatMapMaybe(Functions.justFunction(ms))
+                    .test();
+
+            Runnable r1 = new Runnable() {
+                @Override
+                public void run() {
+                    ms.onSuccess(1);
+                }
+            };
+            Runnable r2 = new Runnable() {
+                @Override
+                public void run() {
+                    to.dispose();
+                }
+            };
+
+            TestHelper.race(r1, r2);
+
+            to.assertNoErrors();
+        }
     }
 }
