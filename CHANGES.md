@@ -1,5 +1,34 @@
 # RxJava Releases #
 
+### Version 1.3.8 - March 31, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex%7Crxjava%7C1.3.8%7C))
+
+RxJava 1.x is now officially **end-of-life (EOL)**. No further developments, bugfixes, enhancements, javadoc changes, maintenance will be provided by this project after version **1.3.8**.
+
+Users are encourage to [migrate to 2.x](https://github.com/ReactiveX/RxJava/wiki/What's-different-in-2.0). In accordance, the wiki will be updated in the coming months to describe 2.x features and properties.
+
+#### Bugfixes
+
+- [Pull 5935](https://github.com/ReactiveX/RxJava/pull/5935): Fix `take()` to route late errors to `RxJavaHooks`.
+
+### Version 1.3.7 - March 21, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex%7Crxjava%7C1.3.7%7C))
+
+#### Bugfixes
+
+- [Pull 5917](https://github.com/ReactiveX/RxJava/pull/5917): Fix and deprecate evicting `groupBy` and add a new overload with the corrected signature.
+
+### Version 1.3.6 - February 15, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex%7Crxjava%7C1.3.6%7C))
+
+#### Bugfixes
+
+- [Pull 5850](https://github.com/ReactiveX/RxJava/pull/5850): Fix a race condition that may make `OperatorMaterialize` emit the wrong signals.
+- [Pull 5851](https://github.com/ReactiveX/RxJava/pull/5851): Fix a race condition in `OperatorMerge.InnerSubscriber#onError` causing incorrect terminal event.
+
+### Version 1.3.5 - January 27, 2018 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex%7Crxjava%7C1.3.5%7C))
+
+#### Other
+
+- [Pull 5820](https://github.com/ReactiveX/RxJava/pull/5820): `RxJavaPlugins` lookup workaround for `System.getProperties()` access restrictions.
+
 ### Version 1.3.4 - November 19, 2017 ([Maven](http://search.maven.org/#artifactdetails%7Cio.reactivex%7Crxjava%7C1.3.4%7C))
 
 #### Bugfixes
