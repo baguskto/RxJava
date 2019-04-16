@@ -516,7 +516,7 @@ public class ObservableRefCountTest {
     public void testUpstreamErrorAllowsRetry() throws InterruptedException {
         final AtomicInteger intervalSubscribed = new AtomicInteger();
         Observable<String> interval =
-                Observable.interval(200,TimeUnit.MILLISECONDS)
+                Observable.interval(200, TimeUnit.MILLISECONDS)
                         .doOnSubscribe(new Consumer<Disposable>() {
                             @Override
                             public void accept(Disposable d) {
@@ -1344,5 +1344,20 @@ public class ObservableRefCountTest {
         o.timeout(rc);
 
         assertTrue(((Disposable)o.source).isDisposed());
+    }
+
+    @Test
+    public void disconnectBeforeConnect() {
+        BehaviorSubject<Integer> subject = BehaviorSubject.create();
+
+        Observable<Integer> observable = subject
+                .replay(1)
+                .refCount();
+
+        observable.takeUntil(Observable.just(1)).test();
+
+        subject.onNext(2);
+
+        observable.take(1).test().assertResult(2);
     }
 }

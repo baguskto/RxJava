@@ -537,7 +537,7 @@ public class FlowableRefCountTest {
         try {
             final AtomicInteger intervalSubscribed = new AtomicInteger();
             Flowable<String> interval =
-                    Flowable.interval(200,TimeUnit.MILLISECONDS)
+                    Flowable.interval(200, TimeUnit.MILLISECONDS)
                             .doOnSubscribe(new Consumer<Subscription>() {
                                 @Override
                                 public void accept(Subscription s) {
@@ -1393,5 +1393,20 @@ public class FlowableRefCountTest {
         o.timeout(rc);
 
         assertTrue(((Disposable)o.source).isDisposed());
+    }
+
+    @Test
+    public void disconnectBeforeConnect() {
+        BehaviorProcessor<Integer> processor = BehaviorProcessor.create();
+
+        Flowable<Integer> flowable = processor
+                .replay(1)
+                .refCount();
+
+        flowable.takeUntil(Flowable.just(1)).test();
+
+        processor.onNext(2);
+
+        flowable.take(1).test().assertResult(2);
     }
 }

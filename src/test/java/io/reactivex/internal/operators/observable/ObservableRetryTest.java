@@ -14,6 +14,7 @@
 package io.reactivex.internal.operators.observable;
 
 import static org.junit.Assert.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.util.*;
@@ -29,9 +30,11 @@ import io.reactivex.Observer;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.TestException;
 import io.reactivex.functions.*;
+import io.reactivex.internal.functions.Functions;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.observables.GroupedObservable;
 import io.reactivex.observers.*;
+import io.reactivex.plugins.RxJavaPlugins;
 import io.reactivex.schedulers.Schedulers;
 import io.reactivex.subjects.PublishSubject;
 
@@ -522,11 +525,14 @@ public class ObservableRetryTest {
         final AtomicInteger active = new AtomicInteger(0), maxActive = new AtomicInteger(0);
         final AtomicInteger nextBeforeFailure;
 
+        final String context;
+
         private final int emitDelay;
 
-        SlowObservable(int emitDelay, int countNext) {
+        SlowObservable(int emitDelay, int countNext, String context) {
             this.emitDelay = emitDelay;
             this.nextBeforeFailure = new AtomicInteger(countNext);
+            this.context = context;
         }
 
         @Override
@@ -542,7 +548,7 @@ public class ObservableRetryTest {
             efforts.getAndIncrement();
             active.getAndIncrement();
             maxActive.set(Math.max(active.get(), maxActive.get()));
-            final Thread thread = new Thread() {
+            final Thread thread = new Thread(context) {
                 @Override
                 public void run() {
                     long nr = 0;
@@ -552,7 +558,9 @@ public class ObservableRetryTest {
                             if (nextBeforeFailure.getAndDecrement() > 0) {
                                 observer.onNext(nr++);
                             } else {
+                                active.decrementAndGet();
                                 observer.onError(new RuntimeException("expected-failed"));
+                                break;
                             }
                         }
                     } catch (InterruptedException t) {
@@ -613,7 +621,7 @@ public class ObservableRetryTest {
         Observer<Long> observer = TestHelper.mockObserver();
 
         // Observable that always fails after 100ms
-        SlowObservable so = new SlowObservable(100, 0);
+        SlowObservable so = new SlowObservable(100, 0, "testUnsubscribeAfterError");
         Observable<Long> o = Observable.unsafeCreate(so).retry(5);
 
         AsyncObserver<Long> async = new AsyncObserver<Long>(observer);
@@ -637,7 +645,7 @@ public class ObservableRetryTest {
         Observer<Long> observer = TestHelper.mockObserver();
 
         // Observable that sends every 100ms (timeout fails instead)
-        SlowObservable so = new SlowObservable(100, 10);
+        SlowObservable so = new SlowObservable(100, 10, "testTimeoutWithRetry");
         Observable<Long> o = Observable.unsafeCreate(so).timeout(80, TimeUnit.MILLISECONDS).retry(5);
 
         AsyncObserver<Long> async = new AsyncObserver<Long>(observer);
@@ -801,7 +809,7 @@ public class ObservableRetryTest {
                 return t1;
             }
         })
-        .flatMap(new Function<GroupedObservable<String,String>, Observable<String>>() {
+        .flatMap(new Function<GroupedObservable<String, String>, Observable<String>>() {
             @Override
             public Observable<String> apply(GroupedObservable<String, String> t1) {
                 return t1.take(1);
@@ -846,7 +854,7 @@ public class ObservableRetryTest {
                 return t1;
             }
         })
-        .flatMap(new Function<GroupedObservable<String,String>, Observable<String>>() {
+        .flatMap(new Function<GroupedObservable<String, String>, Observable<String>>() {
             @Override
             public Observable<String> apply(GroupedObservable<String, String> t1) {
                 return t1.take(1);
@@ -931,4 +939,257 @@ public class ObservableRetryTest {
       assertFalse(subject.hasObservers());
     }
 
+    @Test
+    public void noCancelPreviousRetry() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.defer(new Callable<ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> call() throws Exception {
+                if (times.getAndIncrement() < 4) {
+                    return Observable.error(new TestException());
+                }
+                return Observable.just(1);
+            }
+        })
+        .doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retry(5)
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void noCancelPreviousRetryWhile() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.defer(new Callable<ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> call() throws Exception {
+                if (times.getAndIncrement() < 4) {
+                    return Observable.error(new TestException());
+                }
+                return Observable.just(1);
+            }
+        })
+        .doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retry(5, Functions.alwaysTrue())
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void noCancelPreviousRetryWhile2() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.defer(new Callable<ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> call() throws Exception {
+                if (times.getAndIncrement() < 4) {
+                    return Observable.error(new TestException());
+                }
+                return Observable.just(1);
+            }
+        })
+        .doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retry(new BiPredicate<Integer, Throwable>() {
+            @Override
+            public boolean test(Integer a, Throwable b) throws Exception {
+                return a < 5;
+            }
+        })
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void noCancelPreviousRetryUntil() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.defer(new Callable<ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> call() throws Exception {
+                if (times.getAndIncrement() < 4) {
+                    return Observable.error(new TestException());
+                }
+                return Observable.just(1);
+            }
+        })
+        .doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retryUntil(new BooleanSupplier() {
+            @Override
+            public boolean getAsBoolean() throws Exception {
+                return false;
+            }
+        })
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void noCancelPreviousRepeatWhen() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.defer(new Callable<ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> call() throws Exception {
+                if (times.get() < 4) {
+                    return Observable.error(new TestException());
+                }
+                return Observable.just(1);
+            }
+        }).doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retryWhen(new Function<Observable<Throwable>, ObservableSource<?>>() {
+            @Override
+            public ObservableSource<?> apply(Observable<Throwable> e) throws Exception {
+                return e.takeWhile(new Predicate<Object>() {
+                    @Override
+                    public boolean test(Object v) throws Exception {
+                        return times.getAndIncrement() < 4;
+                    }
+                });
+            }
+        })
+        .test()
+        .assertResult(1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void noCancelPreviousRepeatWhen2() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        final AtomicInteger times = new AtomicInteger();
+
+        Observable<Integer> source = Observable.<Integer>error(new TestException()).doOnDispose(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        source.retryWhen(new Function<Observable<Throwable>, ObservableSource<?>>() {
+            @Override
+            public ObservableSource<?> apply(Observable<Throwable> e) throws Exception {
+                return e.takeWhile(new Predicate<Object>() {
+                    @Override
+                    public boolean test(Object v) throws Exception {
+                        return times.getAndIncrement() < 4;
+                    }
+                });
+            }
+        })
+        .test()
+        .assertResult();
+
+        assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void repeatFloodNoSubscriptionError() {
+        List<Throwable> errors = TestHelper.trackPluginErrors();
+
+        final TestException error = new TestException();
+
+        try {
+            final PublishSubject<Integer> source = PublishSubject.create();
+            final PublishSubject<Integer> signaller = PublishSubject.create();
+
+            for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+
+                TestObserver<Integer> to = source.take(1)
+                .map(new Function<Integer, Integer>() {
+                    @Override
+                    public Integer apply(Integer v) throws Exception {
+                        throw error;
+                    }
+                })
+                .retryWhen(new Function<Observable<Throwable>, ObservableSource<Integer>>() {
+                    @Override
+                    public ObservableSource<Integer> apply(Observable<Throwable> v)
+                            throws Exception {
+                        return signaller;
+                    }
+                }).test();
+
+                Runnable r1 = new Runnable() {
+                    @Override
+                    public void run() {
+                        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+                            source.onNext(1);
+                        }
+                    }
+                };
+                Runnable r2 = new Runnable() {
+                    @Override
+                    public void run() {
+                        for (int i = 0; i < TestHelper.RACE_DEFAULT_LOOPS; i++) {
+                            signaller.onNext(1);
+                        }
+                    }
+                };
+
+                TestHelper.race(r1, r2);
+
+                to.dispose();
+            }
+
+            if (!errors.isEmpty()) {
+                for (Throwable e : errors) {
+                    e.printStackTrace();
+                }
+                fail(errors + "");
+            }
+        } finally {
+            RxJavaPlugins.reset();
+        }
+    }
 }

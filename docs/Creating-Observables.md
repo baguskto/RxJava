@@ -7,6 +7,7 @@ This page shows methods that create reactive sources, such as `Observable`s.
 - [`empty`](#empty)
 - [`error`](#error)
 - [`from`](#from)
+- [`generate`](#generate)
 - [`interval`](#interval)
 - [`just`](#just)
 - [`never`](#never)
@@ -17,7 +18,7 @@ This page shows methods that create reactive sources, such as `Observable`s.
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/just.html](http://reactivex.io/documentation/operators/just.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/just.html](http://reactivex.io/documentation/operators/just.html)
 
 Constructs a reactive type by taking a pre-existing object and emitting that specific object to the downstream consumer upon subscription.
 
@@ -36,8 +37,8 @@ There exist overloads with 2 to 9 arguments for convenience, which objects (with
 ```java
 Observable<Object> observable = Observable.just("1", "A", "3.2", "def");
 
-observable.subscribe(item -> System.out.print(item), error -> error.printStackTrace, 
-    () -> System.out.println());
+  observable.subscribe(item -> System.out.print(item), error -> error.printStackTrace(),
+                () -> System.out.println());
 ```
 
 ## From
@@ -46,7 +47,7 @@ Constructs a sequence from a pre-existing source or generator type.
 
 *Note: These static methods use the postfix naming convention (i.e., the argument type is repeated in the method name) to avoid overload resolution ambiguities.*
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/from.html](http://reactivex.io/documentation/operators/from.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/from.html](http://reactivex.io/documentation/operators/from.html)
 
 ### fromIterable
 
@@ -79,7 +80,7 @@ for (int i = 0; i < array.length; i++) {
     array[i] = i;
 }
 
-Observable<Integer> observable = Observable.fromIterable(array);
+Observable<Integer> observable = Observable.fromArray(array);
 
 observable.subscribe(item -> System.out.println(item), error -> error.printStackTrace(), 
      () -> System.out.println("Done"));
@@ -154,7 +155,7 @@ Given a pre-existing, already running or already completed `java.util.concurrent
 #### fromFuture example:
 
 ```java
-ScheduledExecutorService executor = Executors.newSingleThreadedScheduledExecutor();
+ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
 Future<String> future = executor.schedule(() -> "Hello world!", 1, TimeUnit.SECONDS);
 
@@ -199,11 +200,32 @@ observable.subscribe(
     () -> System.out.println("Done"));
 ```
 
+## generate
+
+**Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Completable`
+
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/create.html](http://reactivex.io/documentation/operators/create.html)
+
+Creates a cold, synchronous and stateful generator of values.
+
+#### generate example:
+
+```java
+int startValue = 1;
+int incrementValue = 1;
+Flowable<Integer> flowable = Flowable.generate(() -> startValue, (s, emitter) -> {
+	int nextValue = s + incrementValue;
+	emitter.onNext(nextValue);
+	return nextValue;
+});
+flowable.subscribe(value -> System.out.println(value));
+```
+
 ## create
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/create.html](http://reactivex.io/documentation/operators/create.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/create.html](http://reactivex.io/documentation/operators/create.html)
 
 Construct a **safe** reactive type instance which when subscribed to by a consumer, runs an user-provided function and provides a type-specific `Emitter` for this function to generate the signal(s) the designated business logic requires. This method allows bridging the non-reactive, usually listener/callback-style world, with the reactive world.
 
@@ -239,7 +261,7 @@ executor.shutdown();
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/defer.html](http://reactivex.io/documentation/operators/defer.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/defer.html](http://reactivex.io/documentation/operators/defer.html)
 
 Calls an user-provided `java.util.concurrent.Callable` when a consumer subscribes to the reactive type so that the `Callable` can generate the actual reactive instance to relay signals from towards the consumer. `defer` allows:
 
@@ -266,7 +288,7 @@ observable.subscribe(time -> System.out.println(time));
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/range.html](http://reactivex.io/documentation/operators/range.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/range.html](http://reactivex.io/documentation/operators/range.html)
 
 Generates a sequence of values to each individual consumer. The `range()` method generates `Integer`s, the `rangeLong()` generates `Long`s.
 
@@ -276,10 +298,10 @@ String greeting = "Hello World!";
 
 Observable<Integer> indexes = Observable.range(0, greeting.length());
 
-Observable<Char> characters = indexes
+Observable<Character> characters = indexes
     .map(index -> greeting.charAt(index));
 
-characters.subscribe(character -> System.out.print(character), erro -> error.printStackTrace(),
+characters.subscribe(character -> System.out.print(character), error -> error.printStackTrace(),
         () -> System.out.println());
 ```
 
@@ -287,7 +309,7 @@ characters.subscribe(character -> System.out.print(character), erro -> error.pri
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/interval.html](http://reactivex.io/documentation/operators/interval.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/interval.html](http://reactivex.io/documentation/operators/interval.html)
 
 Periodically generates an infinite, ever increasing numbers (of type `Long`). The `intervalRange` variant generates a limited amount of such numbers.
 
@@ -309,7 +331,7 @@ clock.subscribe(time -> {
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/timer.html](http://reactivex.io/documentation/operators/timer.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/timer.html](http://reactivex.io/documentation/operators/timer.html)
 
 After the specified time, this reactive source signals a single `0L` (then completes for `Flowable` and `Observable`).
 
@@ -325,7 +347,7 @@ eggTimer.blockingSubscribe(v -> System.out.println("Egg is ready!"));
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_off.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
 
 This type of source signals completion immediately upon subscription.
 
@@ -344,7 +366,7 @@ empty.subscribe(
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
 
 This type of source does not signal any `onNext`, `onSuccess`, `onError` or `onComplete`. This type of reactive source is useful in testing or "disabling" certain sources in combinator operators.
 
@@ -363,7 +385,7 @@ never.subscribe(
 
 **Available in:** ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Flowable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Observable`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Maybe`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Single`, ![image](https://raw.github.com/wiki/ReactiveX/RxJava/images/checkmark_on.png) `Completable`
 
-**ReactiveX doumentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
+**ReactiveX documentation:** [http://reactivex.io/documentation/operators/empty-never-throw.html](http://reactivex.io/documentation/operators/empty-never-throw.html)
 
 Signal an error, either pre-existing or generated via a `java.util.concurrent.Callable`, to the consumer.
 
@@ -374,7 +396,7 @@ Observable<String> error = Observable.error(new IOException());
 
 error.subscribe(
     v -> System.out.println("This should never be printed!"), 
-    error -> error.printStackTrace(),
+    e -> e.printStackTrace(),
     () -> System.out.println("This neither!"));
 ```
 

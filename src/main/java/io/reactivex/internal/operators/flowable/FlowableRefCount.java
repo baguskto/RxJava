@@ -25,7 +25,6 @@ import io.reactivex.functions.Consumer;
 import io.reactivex.internal.disposables.*;
 import io.reactivex.internal.subscriptions.SubscriptionHelper;
 import io.reactivex.plugins.RxJavaPlugins;
-import io.reactivex.schedulers.Schedulers;
 
 /**
  * Returns an observable sequence that stays connected to the source as long as
@@ -49,7 +48,7 @@ public final class FlowableRefCount<T> extends Flowable<T> {
     RefConnection connection;
 
     public FlowableRefCount(ConnectableFlowable<T> source) {
-        this(source, 1, 0L, TimeUnit.NANOSECONDS, Schedulers.trampoline());
+        this(source, 1, 0L, TimeUnit.NANOSECONDS, null);
     }
 
     public FlowableRefCount(ConnectableFlowable<T> source, int n, long timeout, TimeUnit unit,
@@ -141,7 +140,11 @@ public final class FlowableRefCount<T> extends Flowable<T> {
                 if (source instanceof Disposable) {
                     ((Disposable)source).dispose();
                 } else if (source instanceof ResettableConnectable) {
-                    ((ResettableConnectable)source).resetIf(connectionObject);
+                    if (connectionObject == null) {
+                        rc.disconnectedEarly = true;
+                    } else {
+                        ((ResettableConnectable)source).resetIf(connectionObject);
+                    }
                 }
             }
         }
@@ -160,6 +163,8 @@ public final class FlowableRefCount<T> extends Flowable<T> {
 
         boolean connected;
 
+        boolean disconnectedEarly;
+
         RefConnection(FlowableRefCount<?> parent) {
             this.parent = parent;
         }
@@ -172,6 +177,11 @@ public final class FlowableRefCount<T> extends Flowable<T> {
         @Override
         public void accept(Disposable t) throws Exception {
             DisposableHelper.replace(this, t);
+            synchronized (parent) {
+                if (disconnectedEarly) {
+                    ((ResettableConnectable)parent.source).resetIf(t);
+                }
+            }
         }
     }
 

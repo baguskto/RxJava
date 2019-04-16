@@ -29,7 +29,7 @@ import org.reactivestreams.*;
 import io.reactivex.*;
 import io.reactivex.disposables.*;
 import io.reactivex.exceptions.*;
-import io.reactivex.functions.Function;
+import io.reactivex.functions.*;
 import io.reactivex.internal.functions.Functions;
 import io.reactivex.internal.subscriptions.BooleanSubscription;
 import io.reactivex.plugins.RxJavaPlugins;
@@ -779,8 +779,8 @@ public class FlowableConcatTest {
 
     @Test
     public void testRequestOverflowDoesNotStallStream() {
-        Flowable<Integer> f1 = Flowable.just(1,2,3);
-        Flowable<Integer> f2 = Flowable.just(4,5,6);
+        Flowable<Integer> f1 = Flowable.just(1, 2, 3);
+        Flowable<Integer> f2 = Flowable.just(4, 5, 6);
         final AtomicBoolean completed = new AtomicBoolean(false);
         f1.concatWith(f2).subscribe(new DefaultSubscriber<Integer>() {
 
@@ -1626,5 +1626,43 @@ public class FlowableConcatTest {
         .assertResult(1);
 
         assertEquals(1, calls[0]);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void noCancelPreviousArray() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        Flowable<Integer> source = Flowable.just(1).doOnCancel(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        Flowable.concatArray(source, source, source, source, source)
+        .test()
+        .assertResult(1, 1, 1, 1, 1);
+
+        assertEquals(0, counter.get());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void noCancelPreviousIterable() {
+        final AtomicInteger counter = new AtomicInteger();
+
+        Flowable<Integer> source = Flowable.just(1).doOnCancel(new Action() {
+            @Override
+            public void run() throws Exception {
+                counter.getAndIncrement();
+            }
+        });
+
+        Flowable.concat(Arrays.asList(source, source, source, source, source))
+        .test()
+        .assertResult(1, 1, 1, 1, 1);
+
+        assertEquals(0, counter.get());
     }
 }

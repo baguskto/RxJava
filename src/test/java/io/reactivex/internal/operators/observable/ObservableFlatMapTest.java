@@ -515,7 +515,7 @@ public class ObservableFlatMapTest {
 
     @Test
     public void flatMapIntPassthruAsync() {
-        for (int i = 0;i < 1000; i++) {
+        for (int i = 0; i < 1000; i++) {
             TestObserver<Integer> to = new TestObserver<Integer>();
 
             Observable.range(1, 1000).flatMap(new Function<Integer, Observable<Integer>>() {
@@ -1044,5 +1044,45 @@ public class ObservableFlatMapTest {
         merger.drainLoop();
 
         to.assertValuesOnly(10, 11, 12, 13, 14, 20, 21, 22, 23, 24);
+    }
+
+    @Test
+    public void maxConcurrencySustained() {
+        final PublishSubject<Integer> ps1 = PublishSubject.create();
+        final PublishSubject<Integer> ps2 = PublishSubject.create();
+        PublishSubject<Integer> ps3 = PublishSubject.create();
+        PublishSubject<Integer> ps4 = PublishSubject.create();
+
+        TestObserver<Integer> to = Observable.just(ps1, ps2, ps3, ps4)
+        .flatMap(new Function<PublishSubject<Integer>, ObservableSource<Integer>>() {
+            @Override
+            public ObservableSource<Integer> apply(PublishSubject<Integer> v) throws Exception {
+                return v;
+            }
+        }, 2)
+        .doOnNext(new Consumer<Integer>() {
+            @Override
+            public void accept(Integer v) throws Exception {
+                if (v == 1) {
+                    // this will make sure the drain loop detects two completed
+                    // inner sources and replaces them with fresh ones
+                    ps1.onComplete();
+                    ps2.onComplete();
+                }
+            }
+        })
+        .test();
+
+        ps1.onNext(1);
+
+        assertFalse(ps1.hasObservers());
+        assertFalse(ps2.hasObservers());
+        assertTrue(ps3.hasObservers());
+        assertTrue(ps4.hasObservers());
+
+        to.dispose();
+
+        assertFalse(ps3.hasObservers());
+        assertFalse(ps4.hasObservers());
     }
 }
