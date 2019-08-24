@@ -42,7 +42,7 @@ import io.reactivex.schedulers.*;
  * Many operators in the class accept {@code ObservableSource}(s), the base reactive interface
  * for such non-backpressured flows, which {@code Observable} itself implements as well.
  * <p>
- * The Observable's operators, by default, run with a buffer size of 128 elements (see {@link Flowable#bufferSize()},
+ * The Observable's operators, by default, run with a buffer size of 128 elements (see {@link Flowable#bufferSize()}),
  * that can be overridden globally via the system parameter {@code rx2.buffer-size}. Most operators, however, have
  * overloads that allow setting their internal buffer size explicitly.
  * <p>
@@ -51,7 +51,7 @@ import io.reactivex.schedulers.*;
  * <img width="640" height="317" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/legend.png" alt="">
  * <p>
  * The design of this class was derived from the
- * <a href="https://github.com/reactive-streams/reactive-streams-jvm">Reactive-Streams design and specification</a>
+ * <a href="https://github.com/reactive-streams/reactive-streams-jvm">Reactive Streams design and specification</a>
  * by removing any backpressure-related infrastructure and implementation detail, replacing the
  * {@code org.reactivestreams.Subscription} with {@link Disposable} as the primary means to dispose of
  * a flow.
@@ -84,12 +84,12 @@ import io.reactivex.schedulers.*;
  *             System.out.println("Done!");
  *         }
  *     });
- * 
+ *
  * Thread.sleep(500);
  * // the sequence can now be disposed via dispose()
  * d.dispose();
  * </code></pre>
- * 
+ *
  * @param <T>
  *            the type of the items emitted by the Observable
  * @see Flowable
@@ -1278,7 +1278,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
     public static <T> Observable<T> concatArray(ObservableSource<? extends T>... sources) {
         if (sources.length == 0) {
             return empty();
-        } else
+        }
         if (sources.length == 1) {
             return wrap((ObservableSource<T>)sources[0]);
         }
@@ -1305,7 +1305,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
     public static <T> Observable<T> concatArrayDelayError(ObservableSource<? extends T>... sources) {
         if (sources.length == 0) {
             return empty();
-        } else
+        }
         if (sources.length == 1) {
             return (Observable<T>)wrap(sources[0]);
         }
@@ -1765,7 +1765,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
         ObjectHelper.requireNonNull(items, "items is null");
         if (items.length == 0) {
             return empty();
-        } else
+        }
         if (items.length == 1) {
             return just(items[0]);
         }
@@ -1985,12 +1985,12 @@ public abstract class Observable<T> implements ObservableSource<T> {
     }
 
     /**
-     * Converts an arbitrary Reactive-Streams Publisher into an Observable.
+     * Converts an arbitrary Reactive Streams Publisher into an Observable.
      * <p>
      * <img width="640" height="344" src="https://raw.github.com/wiki/ReactiveX/RxJava/images/rx-operators/fromPublisher.o.png" alt="">
      * <p>
      * The {@link Publisher} must follow the
-     * <a href="https://github.com/reactive-streams/reactive-streams-jvm#reactive-streams">Reactive-Streams specification</a>.
+     * <a href="https://github.com/reactive-streams/reactive-streams-jvm#reactive-streams">Reactive Streams specification</a>.
      * Violating the specification may result in undefined behavior.
      * <p>
      * If possible, use {@link #create(ObservableOnSubscribe)} to create a
@@ -3982,7 +3982,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
 
     /**
      * Create an Observable by wrapping an ObservableSource <em>which has to be implemented according
-     * to the Reactive-Streams-based Observable specification by handling
+     * to the Reactive Streams based Observable specification by handling
      * disposal correctly; no safeguards are provided by the Observable itself</em>.
      * <dl>
      *  <dt><b>Scheduler:</b></dt>
@@ -9626,7 +9626,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
      * Example:
      * <pre><code>
      * // Step 1: Create the consumer type that will be returned by the ObservableOperator.apply():
-     * 
+     *
      * public final class CustomObserver&lt;T&gt; implements Observer&lt;T&gt;, Disposable {
      *
      *     // The downstream's Observer that will receive the onXXX events
@@ -11229,7 +11229,7 @@ public abstract class Observable<T> implements ObservableSource<T> {
      * Subscribes to the current Observable and wraps the given Observer into a SafeObserver
      * (if not already a SafeObserver) that
      * deals with exceptions thrown by a misbehaving Observer (that doesn't follow the
-     * Reactive-Streams specification).
+     * Reactive Streams specification).
      * <dl>
      *  <dt><b>Scheduler:</b></dt>
      *  <dd>{@code safeSubscribe} does not operate by default on a particular {@link Scheduler}.</dd>
@@ -12816,10 +12816,10 @@ public abstract class Observable<T> implements ObservableSource<T> {
     public final Observable<T> takeLast(int count) {
         if (count < 0) {
             throw new IndexOutOfBoundsException("count >= 0 required but it was " + count);
-        } else
+        }
         if (count == 0) {
             return RxJavaPlugins.onAssembly(new ObservableIgnoreElements<T>(this));
-        } else
+        }
         if (count == 1) {
             return RxJavaPlugins.onAssembly(new ObservableTakeLastOne<T>(this));
         }
